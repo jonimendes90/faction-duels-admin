@@ -181,7 +181,7 @@ function botRows() {
   const off = new Set((cfgB.disabled || []).map(Number));
   let rows;
   if (S.botSrc === 'sim') {
-    rows = (S.sim.bots || []).map((b) => ({ id: b.id, n: b.n, w: b.w, rounds: b.rounds }));
+    rows = (S.sim.bots || []).map((b) => ({ id: b.id, n: b.n, w: b.w, rounds: b.rounds, cs: b.s, cdq: b.dq, cgl: b.gl }));
   } else {
     rows = (S.bots || []).map((b) => ({ id: b.id, n: b.games, w: b.bot_wins, rounds: b.rounds, quits: b.quits }));
     const seen = new Set(rows.map((r) => r.id));
@@ -193,18 +193,20 @@ function botRows() {
   HS.forEach((h) => {
     const list = rows.filter((r) => r.h === h && r.n);
     const avg = list.length ? list.reduce((a, r) => a + r.w, 0) / Math.max(1, list.reduce((a, r) => a + r.n, 0)) : null;
-    ref[h] = { avg, n: list.reduce((a, r) => a + r.n, 0), bots: rows.filter((r) => r.h === h).length, ref: S.botSrc === 'sim' ? avg : targets[h] / 100 };
+    const simT = S.sim && S.sim.targets && S.sim.targets[h];
+    ref[h] = { avg, n: list.reduce((a, r) => a + r.n, 0), bots: rows.filter((r) => r.h === h).length, ref: S.botSrc === 'sim' ? (simT != null ? simT : avg) : targets[h] / 100 };
   });
+  const tl = S.botSrc === 'sim' && S.sim && S.sim.tol ? S.sim.tol * 100 : tol;
   rows.forEach((r) => {
     const R = ref[r.h] && ref[r.h].ref;
     r.dev = r.p != null && R != null ? r.p - R : null;
     const min = S.botSrc === 'sim' ? 50 : 30;
     if (!r.n || r.n < min) r.st = 'few';
-    else if (r.dev > tol / 100 && r.dev > 2 * se(r.p, r.n)) r.st = 'strong';
-    else if (r.dev < -tol / 100 && -r.dev > 2 * se(r.p, r.n)) r.st = 'weak';
+    else if (r.dev > tl / 100 && r.dev > 2 * se(r.p, r.n)) r.st = 'strong';
+    else if (r.dev < -tl / 100 && -r.dev > 2 * se(r.p, r.n)) r.st = 'weak';
     else r.st = 'ok';
   });
-  return { rows, ref, targets, tol };
+  return { rows, ref, targets, tol: S.botSrc === 'sim' ? tl : tol };
 }
 function botsHTML() {
   const { rows, ref, targets, tol } = botRows();
@@ -214,20 +216,21 @@ function botsHTML() {
   list.sort((a, b) => (so === 'id' ? a.id - b.id : so === 'n' ? b.n - a.n : so === 'dev' ? Math.abs(b.dev || 0) - Math.abs(a.dev || 0) : (b.p == null ? -1 : b.p) - (a.p == null ? -1 : a.p)));
   const sim = S.botSrc === 'sim';
   const count = (st) => rows.filter((r) => r.st === st).length;
-  const head = '<h1>Bots</h1><p class="sub">Os 200 perfis. <b>Partidas reais</b> = bots contra jogadores no modo online, comparados com a meta do nível. <b>Simulação</b> = cada bot jogou ' + (sim && S.sim.n ? S.sim.n : 'centenas de') + ' partidas contra uma IA de referência (Normal, deck aleatório de 2 facções, Comandante e equipamentos comuns), comparado com a média do próprio nível. Um bot só é marcado quando a diferença passa de ' + tol + ' pontos <i>e</i> não pode ser explicada por sorte.</p>'
+  const head = '<h1>Bots</h1><p class="sub">Os 200 perfis. <b>Partidas reais</b> = bots contra jogadores no modo online, comparados com a meta do nível. <b>Simulação</b> = teste de calibração: cada bot jogou ' + (sim && S.sim.n ? S.sim.n : 'centenas de') + ' partidas contra uma IA de referência (Normal, deck aleatório de 2 facções, Comandante e equipamentos comuns) e foi ajustado até a força total (habilidade + deck + equipamentos) bater o alvo do nível. Um bot só é marcado quando a diferença passa de ' + tol + ' pontos <i>e</i> não pode ser explicada por sorte. A calibração é feita fora do jogo e entra numa versão nova; “Desligar” é só um freio de emergência.</p>'
     + '<div class="row" style="margin-bottom:14px"><div class="seg"><button data-act="bot-src" data-v="real" class="' + (!sim ? 'on' : '') + '">Partidas reais</button><button data-act="bot-src" data-v="sim" class="' + (sim ? 'on' : '') + '">Simulação</button></div>'
     + '<select id="bot-h" data-act="bot-h"><option value="">Todos os níveis</option>' + HS.map((h) => '<option value="' + h + '"' + (S.botH === h ? ' selected' : '') + '>' + h + ' · ' + H_NAME[h] + '</option>').join('') + '</select>'
     + '<select id="bot-st" data-act="bot-st"><option value="">Todas as situações</option><option value="strong"' + (S.botSt === 'strong' ? ' selected' : '') + '>Forte demais (' + count('strong') + ')</option><option value="weak"' + (S.botSt === 'weak' ? ' selected' : '') + '>Fraco demais (' + count('weak') + ')</option><option value="ok"' + (S.botSt === 'ok' ? ' selected' : '') + '>Ok (' + count('ok') + ')</option><option value="few"' + (S.botSt === 'few' ? ' selected' : '') + '>Poucos dados (' + count('few') + ')</option></select>'
     + (sim && S.sim.at ? '<span class="muted">Simulação de ' + dt(S.sim.at) + '</span>' : '') + '</div>';
-  const tiers = '<div class="card"><h2>Por nível</h2><div class="tbl-wrap"><table><thead><tr><th>Nível</th><th class="num">Bots</th><th class="num">Partidas</th><th class="num">Vitória dos bots</th>' + (sim ? '' : '<th class="num">Meta</th>') + '<th></th></tr></thead><tbody>'
-    + HS.map((h) => { const t = ref[h]; const p = t.avg != null ? Math.round(1000 * t.avg) / 10 : null; return '<tr><td>' + h + ' · ' + H_NAME[h] + '</td><td class="num">' + t.bots + '</td><td class="num">' + nf(t.n) + '</td><td class="num">' + pctTxt(p) + '</td>' + (sim ? '' : '<td class="num"><input type="number" class="stat-in" style="width:60px" id="tg-' + h + '" value="' + targets[h] + '" min="5" max="95">%</td>') + '<td>' + winBar(p, sim ? null : targets[h]) + '</td></tr>'; }).join('')
+  const tiers = '<div class="card"><h2>Por nível</h2><div class="tbl-wrap"><table><thead><tr><th>Nível</th><th class="num">Bots</th><th class="num">Partidas</th><th class="num">Vitória dos bots</th>' + (sim ? '<th class="num">Alvo</th>' : '<th class="num">Meta</th>') + '<th></th></tr></thead><tbody>'
+    + HS.map((h) => { const t = ref[h]; const p = t.avg != null ? Math.round(1000 * t.avg) / 10 : null; return '<tr><td>' + h + ' · ' + H_NAME[h] + '</td><td class="num">' + t.bots + '</td><td class="num">' + nf(t.n) + '</td><td class="num">' + pctTxt(p) + '</td>' + (sim ? '<td class="num">' + (t.ref != null ? pctTxt(Math.round(1000 * t.ref) / 10) : '—') + '</td>' : '<td class="num"><input type="number" class="stat-in" style="width:60px" id="tg-' + h + '" value="' + targets[h] + '" min="5" max="95">%</td>') + '<td>' + winBar(p, sim ? (t.ref != null ? Math.round(100 * t.ref) : null) : targets[h]) + '</td></tr>'; }).join('')
     + '</tbody></table></div>' + (sim ? '' : '<div class="row" style="margin-top:10px"><label class="f" style="flex-direction:row;align-items:center;gap:8px">Tolerância <input type="number" id="tg-tol" class="stat-in" style="width:60px" value="' + tol + '" min="3" max="40"> pontos</label><button class="btn sm" data-act="save-targets">Salvar metas</button></div>')
-    + '<p class="muted" style="margin-bottom:0">Meta = quanto um bot desse nível deveria ganhar dos jogadores que enfrenta. Jogadores fracos pegam bots H1, então H1 deve perder bastante.</p></div>';
+    + '<p class="muted" style="margin-bottom:0">' + (sim ? 'Alvo = força que cada nível precisa ter contra a IA de referência. A calibração ajusta habilidade, deck e equipamentos de cada bot até chegar nele.' : 'Meta = quanto um bot desse nível deveria ganhar dos jogadores que enfrenta. Jogadores fracos pegam bots H1, então H1 deve perder bastante.') + '</p></div>';
   const table = '<div class="card sec"><div class="tbl-wrap"><table><thead><tr>'
-    + '<th class="sort" data-act="bot-sort" data-v="id">#</th><th>Nick</th><th>Nível</th><th>Coleção</th><th>Deck</th><th>Estilo</th>'
+    + '<th class="sort" data-act="bot-sort" data-v="id">#</th><th>Nick</th><th>Nível</th><th>Coleção</th><th>Deck</th><th>Estilo</th>' + (sim ? '<th>Calibração</th>' : '')
     + '<th class="num sort" data-act="bot-sort" data-v="n">Partidas</th><th class="num sort" data-act="bot-sort" data-v="pct">Vitória do bot</th><th></th><th class="num sort" data-act="bot-sort" data-v="dev">Diferença</th><th>Situação</th><th>No jogo</th></tr></thead><tbody>'
     + list.map((r) => { const p = r.p != null ? Math.round(1000 * r.p) / 10 : null, d = r.dev != null ? Math.round(1000 * r.dev) / 10 : null, R = ref[r.h] && ref[r.h].ref;
-      return '<tr' + (r.off ? ' style="opacity:.55"' : '') + '><td class="muted">' + r.id + '</td><td>' + esc(r.nick) + '</td><td>' + r.h + '</td><td>' + r.e + '</td><td>' + r.d + '</td><td>' + esc(r.style) + '</td>'
+      return '<tr' + (r.off ? ' style="opacity:.55"' : '') + '><td class="muted">' + r.id + '</td><td>' + esc(r.nick) + '</td><td>' + r.h + (r.h0 && r.h0 !== r.h ? ' <span class="pill p-gold" title="Nível original do perfil; a calibração mudou para o nível onde a força dele se encaixa">era ' + r.h0 + '</span>' : '') + '</td><td>' + r.e + '</td><td>' + r.d + '</td><td>' + esc(r.style) + '</td>'
+        + (sim ? '<td class="muted" title="Habilidade (1 = H1 … 5 = H5), qualidade do deck e nível de equipamentos usados após a calibração">' + (r.cs != null ? 'hab. ' + Number(r.cs).toLocaleString('pt-BR') + (r.cdq && 'D' + r.cdq !== r.d ? ' · deck D' + r.cdq : '') + (r.cgl ? ' · equip. ' + r.cgl : '') : '—') + '</td>' : '')
         + '<td class="num">' + nf(r.n) + '</td><td class="num">' + pctTxt(p) + '</td><td>' + winBar(p, R != null ? Math.round(100 * R) : null) + '</td><td class="num">' + (d == null ? '—' : (d > 0 ? '+' : '') + d.toLocaleString('pt-BR') + ' pts') + '</td><td>' + ST[r.st] + '</td>'
         + '<td><button class="btn sm' + (r.off ? '' : ' danger') + '" data-act="bot-toggle" data-v="' + r.id + '">' + (r.off ? 'Religar' : 'Desligar') + '</button></td></tr>'; }).join('')
     + '</tbody></table></div><p class="muted">“Desligar” tira o perfil do sorteio do matchmaking (vale na próxima vez que o jogador abrir o jogo). Ele continua no ranking.</p></div>';
