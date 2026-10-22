@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Faction Duels · Administração</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><b>FACTION DUELS</b><span>Administração</span></div>
+  <nav class="tabs" id="tabs" hidden>
+    <button data-tab="overview">Métricas</button>
+    <button data-tab="bots">Bots</button>
+    <button data-tab="cards">Cartas</button>
+    <button data-tab="events">Eventos</button>
+    <button data-tab="news">Notícias</button>
+    <button data-tab="mail">Prêmios</button>
+    <button data-tab="versions">Versões</button>
+    <button data-tab="player">Jogador</button>
+  </nav>
+  <div class="me" id="me"></div>
+</header>
+<main id="main"><p class="muted pad">Carregando…</p></main>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
