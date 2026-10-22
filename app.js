@@ -4,7 +4,7 @@
 const SUPA_URL = 'https://jnvqcjfdnedxtfxjlyaq.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpudnFjamZkbmVkeHRmeGpseWFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzNDMzNzQsImV4cCI6MjEwNzkxOTM3NH0.2PMWb5PyR1qkXw-zhyo_CeX78hQKvAi0pmgvmv7I9xE';
 const STORE = SUPA_URL + '/storage/v1/object/public/game/';
-const sb = supabase.createClient(SUPA_URL, SUPA_KEY, { auth: { persistSession: true, detectSessionInUrl: true, flowType: 'pkce' } });
+const sb = supabase.createClient(SUPA_URL, SUPA_KEY, { auth: { persistSession: true, detectSessionInUrl: true, flowType: 'implicit' } });
 
 const FAC = { HUMANOS: 'Humanos', ORCS: 'Orcs', ELFOS: 'Elfos', ANOES: 'Anões', ANJOS: 'Anjos', DEMONIOS: 'Demônios', GOBLINS: 'Goblins', AUTOMATOS: 'Autômatos', VAMPIROS: 'Vampiros', LICANTROPOS: 'Licantropos' };
 const HS = ['H1', 'H2', 'H3', 'H4', 'H5'];
