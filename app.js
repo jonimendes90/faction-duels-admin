@@ -37,6 +37,8 @@ const se = (p, n) => Math.sqrt(Math.max(p * (1 - p), 0.0001) / Math.max(n, 1));
 
 /* ---------- auth ---------- */
 async function boot() {
+  const qp = new URLSearchParams(location.search + '&' + location.hash.slice(1));
+  if (qp.get('error_description')) { history.replaceState(null, '', here()); renderLogin('O login voltou com erro: ' + qp.get('error_description') + '. Confira se o endereço deste site está em Supabase → Authentication → URL Configuration → Redirect URLs.'); }
   const { data } = await sb.auth.getSession();
   await setUser(data.session ? data.session.user : null);
   sb.auth.onAuthStateChange((ev, session) => { if (ev === 'SIGNED_IN' || ev === 'SIGNED_OUT') setUser(session ? session.user : null); });
@@ -65,7 +67,8 @@ function renderLogin(msg) {
     + '<button class="btn" data-act="login-link">Receber link de acesso por e-mail</button>'
     + '<p class="muted" style="font-size:12px">Use a mesma conta do jogo. Só contas marcadas como administradoras no banco conseguem ver alguma coisa aqui.</p></div>';
 }
-const here = () => location.origin + location.pathname;
+// always the folder address (…/faction-duels-admin/), the one allowed in Supabase → Redirect URLs
+const here = () => location.origin + location.pathname.replace(/index\.html$/, '');
 
 /* ---------- data ---------- */
 async function loadBase() {
