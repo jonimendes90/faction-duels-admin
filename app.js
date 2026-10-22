@@ -38,7 +38,7 @@ const se = (p, n) => Math.sqrt(Math.max(p * (1 - p), 0.0001) / Math.max(n, 1));
 /* ---------- auth ---------- */
 async function boot() {
   const qp = new URLSearchParams(location.search + '&' + location.hash.slice(1));
-  if (qp.get('error_description')) { history.replaceState(null, '', here()); renderLogin('O login voltou com erro: ' + qp.get('error_description') + '. Confira se o endereço deste site está em Supabase → Authentication → URL Configuration → Redirect URLs.'); }
+  if (qp.get('error_description')) { history.replaceState(null, '', here()); S.loginMsg = 'O login voltou com erro: ' + qp.get('error_description') + '. Confira se o endereço deste site está em Supabase → Authentication → URL Configuration → Redirect URLs.'; }
   const { data } = await sb.auth.getSession();
   await setUser(data.session ? data.session.user : null);
   sb.auth.onAuthStateChange((ev, session) => { if (ev === 'SIGNED_IN' || ev === 'SIGNED_OUT') setUser(session ? session.user : null); });
@@ -57,6 +57,7 @@ async function setUser(u) {
   go(location.hash.slice(1) || 'overview');
 }
 function renderLogin(msg) {
+  msg = msg || S.loginMsg; S.loginMsg = null;
   $('#main').innerHTML = '<div class="login card"><h1>Administração</h1>'
     + (msg ? '<div class="note">' + esc(msg) + '</div>' : '')
     + '<label class="f">E-mail<input type="email" id="lg-email" autocomplete="email"></label>'
