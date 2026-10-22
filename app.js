@@ -107,6 +107,7 @@ async function render() {
     if (S.tab === 'overview') { if (!S.stats) { m.innerHTML = '<p class="muted pad">Calculando…</p>'; await loadStats(); } m.innerHTML = overviewHTML(); }
     else if (S.tab === 'bots') { if (S.botSrc === 'real' && !S.bots) { m.innerHTML = '<p class="muted pad">Carregando…</p>'; await loadBots(); } if (S.botSrc === 'sim' && !S.sim) { await loadSim(); } m.innerHTML = botsHTML(); }
     else if (S.tab === 'cards') m.innerHTML = cardsHTML();
+    else if (S.tab === 'match') m.innerHTML = matchHTML();
     else if (S.tab === 'events') { if (!S.events) await loadEvents(); m.innerHTML = eventsHTML(); }
     else if (S.tab === 'news') { if (!S.news) await loadNews(); m.innerHTML = newsHTML(); }
     else if (S.tab === 'mail') { if (!S.mail) await loadMail(); m.innerHTML = mailHTML(); }
@@ -269,6 +270,22 @@ function setBal(id, fn) {
   else { const out = {}; if (!sameS) out.s = o.s.map(Number); if (!sameC) out.cost = +o.cost; S.bal[id] = out; }
 }
 
+/* ---------- PARTIDA (tempo das jogadas no Online) ---------- */
+function matchHTML() {
+  const c = Object.assign({ turn: 25, eq: 10, vote: 10 }, S.cfg.match || {});
+  return '<h1>Partida</h1><p class="sub">Tempo das jogadas no modo Online (o Treino contra a IA não tem tempo). Vale para todos a partir da próxima vez que o jogador abrir o jogo.</p>'
+    + '<div class="card"><div class="form">'
+    + '<label class="f">Jogada principal (segundos)<input type="number" id="mt-turn" min="10" max="120" value="' + c.turn + '"></label>'
+    + '<label class="f">Escolha de equipamento (segundos)<input type="number" id="mt-eq" min="5" max="60" value="' + c.eq + '"></label>'
+    + '<label class="f">Voto do campo (segundos)<input type="number" id="mt-vote" min="5" max="60" value="' + c.vote + '"></label>'
+    + '</div><ul class="muted" style="margin:12px 0;padding-left:18px;line-height:1.6">'
+    + '<li>Quando o tempo da jogada acaba: joga a carta escolhida (ou uma aleatória) com o atributo mais forte, sem habilidade e sem equipamento.</li>'
+    + '<li>Duas rodadas seguidas estourando o tempo = derrota por inatividade (vitória normal para o rival).</li>'
+    + '<li>Equipamento: um dos dois é escolhido ao acaso. Voto do campo: conta como aceitar o campo.</li>'
+    + '<li>A tela de resultado do duelo não tem tempo.</li></ul>'
+    + '<button class="btn go" data-act="match-save">Salvar</button></div>';
+}
+
 /* ---------- EVENTOS ---------- */
 async function loadEvents() { const { data, error } = await sb.from('live_events').select('*').order('starts_at', { ascending: false }).limit(100); if (error) throw error; S.events = data; }
 function eventsHTML() {
@@ -406,7 +423,10 @@ document.addEventListener('click', async (e) => {
     } else if (act === 'save-bal') {
       if (await saveCfg('balance', Object.assign({}, S.cfg.balance || {}, { cards: S.bal }))) { S.bal = JSON.parse(JSON.stringify(S.bal)); toast('Ajustes publicados. Os jogadores recebem ao abrir o jogo.'); render(); }
     } else if (act === 'bal-reset') { delete S.bal[v]; render(); }
-    else if (act === 'ev-save') {
+    else if (act === 'match-save') {
+      const n = (id, d, lo, hi) => Math.max(lo, Math.min(hi, Math.round(+val(id) || d)));
+      if (await saveCfg('match', { turn: n('mt-turn', 25, 10, 120), eq: n('mt-eq', 10, 5, 60), vote: n('mt-vote', 10, 5, 60) })) { toast('Tempos salvos.'); S.fresh = true; render(); }
+    } else if (act === 'ev-save') {
       const row = { kind: val('ev-kind'), value: +val('ev-val'), title: val('ev-title'), body: val('ev-body'), starts_at: fromInput(val('ev-start')), ends_at: fromInput(val('ev-end')) };
       if (!row.title) return toast('Dê um título ao evento.', true);
       if (!row.ends_at || Date.parse(row.ends_at) <= Date.parse(row.starts_at)) return toast('O fim precisa ser depois do começo.', true);
