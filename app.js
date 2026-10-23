@@ -113,6 +113,7 @@ async function render() {
     else if (S.tab === 'mail') { if (!S.mail) await loadMail(); m.innerHTML = mailHTML(); }
     else if (S.tab === 'versions') { if (!S.releases) await loadReleases(); m.innerHTML = versionsHTML(); }
     else if (S.tab === 'player') m.innerHTML = playerHTML();
+    else if (S.tab === 'econ') { if (!S.econ) { m.innerHTML = '<p class="muted pad">Carregando…</p>'; await loadEcon(); } m.innerHTML = econHTML(); }
     if (keep) restoreForm(keep);
   } catch (e) { fail(e); }
 }
@@ -286,6 +287,31 @@ function matchHTML() {
     + '<button class="btn go" data-act="match-save">Salvar</button></div>';
 }
 
+/* ---------- ECONOMIA (progresso no servidor, partidas conferidas) ---------- */
+async function loadEcon() {
+  const [a, b] = await Promise.all([sb.rpc('admin_game_summary', { p_days: S.days || 7 }), sb.rpc('admin_game_matches', { p_days: S.days || 7 })]);
+  if (a.error) throw a.error;
+  S.econ = { sum: a.data || {}, list: b.data || [] };
+}
+function econHTML() {
+  const kpi = (t, v) => '<div class="card kpi"><small>' + t + '</small><b>' + v + '</b></div>';
+  const on = !!(S.cfg.econ && S.cfg.econ.on), s = S.econ.sum || {}, L = S.econ.list || [];
+  const why = (m) => m.status === 'abandoned' ? 'Não terminou (o app fechou ou perdeu a conexão)' : esc(m.why || '—');
+  return '<h1>Economia</h1><p class="sub">Com a economia no servidor, ouro, fragmentos, cartas, pacotes, níveis e missões só mudam pela função <code>game</code>. Cada partida online é repetida no servidor antes de pagar.</p>'
+    + '<div class="card"><h2>Economia no servidor</h2><p>' + (on ? '<span class="pill p-good">Ligada</span> O app usa o servidor para tudo (contas com login).' : '<span class="pill p-gold">Desligada</span> O app ainda guarda o progresso no celular.') + '</p>'
+    + '<p class="muted">Ligue só depois que a função <code>game</code> estiver publicada (GitHub → Actions → “Servidor do jogo” com sucesso). Ao ligar, o progresso de cada conta é copiado uma vez para o servidor (com limites: 20 mil de ouro e de fragmentos, 50 pacotes).</p>'
+    + '<button class="btn ' + (on ? 'danger' : 'go') + '" data-act="econ-toggle">' + (on ? 'Desligar' : 'Ligar') + '</button></div>'
+    + '<div class="grid g4 sec">' + kpi('Partidas conferidas', nf(s.done || 0)) + kpi('Recusadas', nf(s.refused || 0)) + kpi('Abandonadas', nf(s.abandoned || 0)) + kpi('Contas no servidor', nf(s.accounts || 0)) + '</div>'
+    + '<div class="card sec"><h2>Contas de teste</h2><p class="muted">Podem usar “todas as cartas” e, no passe, a compra simulada.</p>'
+    + '<div class="row"><input type="email" id="ec-email" placeholder="e-mail da conta" style="flex:1"><button class="btn sm go" data-act="econ-tester" data-v="1">Marcar</button><button class="btn sm" data-act="econ-tester" data-v="0">Desmarcar</button></div>'
+    + '<p>' + ((s.testers || []).length ? (s.testers || []).map((e) => '<span class="pill">' + esc(e) + '</span>').join(' ') : '<span class="muted">Nenhuma conta de teste.</span>') + '</p></div>'
+    + '<div class="card sec"><h2>Partidas recusadas e abandonadas (' + (S.days || 7) + ' dias)</h2>'
+    + (L.length ? '<table><thead><tr><th>Quando</th><th>Conta</th><th>Situação</th><th>Motivo</th><th>Bot</th><th>Jogadas</th></tr></thead><tbody>'
+      + L.map((m) => '<tr><td>' + dt(m.created_at) + '</td><td>' + esc(m.email) + '</td><td>' + (m.status === 'refused' ? '<span class="pill p-bad">Recusada</span>' : '<span class="pill">Abandonada</span>') + '</td><td>' + why(m) + '</td><td>' + m.bot + '</td><td>' + nf(m.moves) + '</td></tr>').join('') + '</tbody></table>'
+      : '<p class="muted">Nenhuma.</p>')
+    + '<p class="muted">Recusada: o diário de jogadas tinha algo que o jogo não permite (por exemplo, usar uma habilidade sem Essência). Ela conta como derrota, sem recompensa. Muitas recusadas da mesma conta indicam tentativa de trapaça.</p></div>';
+}
+
 /* ---------- EVENTOS ---------- */
 async function loadEvents() { const { data, error } = await sb.from('live_events').select('*').order('starts_at', { ascending: false }).limit(100); if (error) throw error; S.events = data; }
 function eventsHTML() {
@@ -423,6 +449,16 @@ document.addEventListener('click', async (e) => {
     } else if (act === 'save-bal') {
       if (await saveCfg('balance', Object.assign({}, S.cfg.balance || {}, { cards: S.bal }))) { S.bal = JSON.parse(JSON.stringify(S.bal)); toast('Ajustes publicados. Os jogadores recebem ao abrir o jogo.'); render(); }
     } else if (act === 'bal-reset') { delete S.bal[v]; render(); }
+    else if (act === 'econ-toggle') {
+      const on = !(S.cfg.econ && S.cfg.econ.on);
+      if (on && !confirm('Ligar a economia no servidor? Confirme que a função game já foi publicada.')) return;
+      if (await saveCfg('econ', { on })) { toast(on ? 'Economia no servidor ligada. Vale quando o jogador abrir o app.' : 'Economia no servidor desligada.'); render(); }
+    } else if (act === 'econ-tester') {
+      const email = val('ec-email'); if (!email) return toast('Digite o e-mail.', true);
+      const { data, error } = await sb.rpc('admin_set_tester', { p_email: email, p_on: v === '1' }); if (error) return fail(error);
+      if (!data) return toast('Conta não encontrada no servidor (ela precisa ter aberto o app com a economia ligada).', true);
+      toast(v === '1' ? 'Conta marcada como teste.' : 'Conta desmarcada.'); S.econ = null; render();
+    }
     else if (act === 'match-save') {
       const n = (id, d, lo, hi) => Math.max(lo, Math.min(hi, Math.round(+val(id) || d)));
       if (await saveCfg('match', { turn: n('mt-turn', 25, 10, 120), eq: n('mt-eq', 10, 5, 60), vote: n('mt-vote', 10, 5, 60) })) { toast('Tempos salvos.'); S.fresh = true; render(); }
