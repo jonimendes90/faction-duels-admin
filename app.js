@@ -313,11 +313,88 @@ function econHTML() {
     + '<div class="card sec"><h2>Contas de teste</h2><p class="muted">Podem usar “todas as cartas” e, no passe, a compra simulada.</p>'
     + '<div class="row"><input type="email" id="ec-email" placeholder="e-mail da conta" style="flex:1"><button class="btn sm go" data-act="econ-tester" data-v="1">Marcar</button><button class="btn sm" data-act="econ-tester" data-v="0">Desmarcar</button></div>'
     + '<p>' + ((s.testers || []).length ? (s.testers || []).map((e) => '<span class="pill">' + esc(e) + '</span>').join(' ') : '<span class="muted">Nenhuma conta de teste.</span>') + '</p></div>'
+    + '<div class="card sec"><h2>Replay de partidas</h2><p class="muted">Partidas online guardadas no servidor. Deixe o e-mail em branco para ver as de todas as contas.</p>'
+    + '<div class="row"><input type="email" id="rp-email" placeholder="e-mail da conta (opcional)" style="flex:1"><button class="btn sm go" data-act="rp-find">Buscar</button></div>'
+    + (S.rpList ? (S.rpList.length ? '<table class="sec"><thead><tr><th>Quando</th><th>Conta</th><th>Resultado</th><th>Jogadas</th><th></th></tr></thead><tbody>'
+      + S.rpList.map((m) => '<tr><td>' + dt(m.created_at) + '</td><td>' + esc(m.email) + '</td><td>' + rpRes(m) + '</td><td>' + nf(m.moves) + '</td><td><button class="btn sm" data-act="rp-open" data-v="' + m.id + '">Ver replay</button></td></tr>').join('') + '</tbody></table>'
+      : '<p class="muted sec">Nenhuma partida encontrada.</p>') : '') + '</div>'
     + '<div class="card sec"><h2>Partidas recusadas e abandonadas (' + (S.days || 7) + ' dias)</h2>'
     + (L.length ? '<table><thead><tr><th>Quando</th><th>Conta</th><th>Situação</th><th>Motivo</th><th>Bot</th><th>Jogadas</th></tr></thead><tbody>'
-      + L.map((m) => '<tr><td>' + dt(m.created_at) + '</td><td>' + esc(m.email) + '</td><td>' + (m.status === 'refused' ? '<span class="pill p-bad">Recusada</span>' : '<span class="pill">Abandonada</span>') + '</td><td>' + why(m) + '</td><td>' + m.bot + '</td><td>' + nf(m.moves) + '</td></tr>').join('') + '</tbody></table>'
+      + L.map((m) => '<tr><td>' + dt(m.created_at) + '</td><td>' + esc(m.email) + '</td><td>' + (m.status === 'refused' ? '<span class="pill p-bad">Recusada</span>' : '<span class="pill">Abandonada</span>') + '</td><td>' + why(m) + '</td><td>' + m.bot + '</td><td>' + nf(m.moves) + ' <button class="btn sm" data-act="rp-open" data-v="' + m.id + '">Replay</button></td></tr>').join('') + '</tbody></table>'
       : '<p class="muted">Nenhuma.</p>')
     + '<p class="muted">Recusada: o diário de jogadas tinha algo que o jogo não permite (por exemplo, usar uma habilidade sem Essência). Ela conta como derrota, sem recompensa. Muitas recusadas da mesma conta indicam tentativa de trapaça.</p></div>';
+}
+
+/* ---------- REPLAY (o servidor refaz a partida e devolve um quadro por duelo) ---------- */
+const ATTR = ['FORÇA', 'DEFESA', 'VELOCIDADE', 'ENERGIA', 'TÉCNICA', 'INTELIGÊNCIA'];
+const ATTR_S = ['FOR', 'DEF', 'VEL', 'ENE', 'TEC', 'INT'];
+const RCOL = { 'Comum': '#c3cad5', 'Rara': '#5aa2ff', 'Épica': '#b77cff', 'Lendária': '#ffcf4d' };
+const RP_PH = [1100, 1300, 1700];
+function rpRes(m) {
+  if (m.status === 'refused') return '<span class="pill p-bad">Recusada</span>';
+  if (m.status === 'abandoned') return '<span class="pill">Abandonada</span>';
+  const sg = m.result ? m.result.sign : 0;
+  return sg > 0 ? '<span class="pill p-good">Vitória</span>' : sg < 0 ? '<span class="pill p-bad">Derrota</span>' : '<span class="pill">Empate</span>';
+}
+async function rpOpen(id) {
+  S.rp = { id, loading: true, i: -1, ph: 0, playing: false, speed: 1 }; rpDraw();
+  const { data, error } = await sb.functions.invoke('game', { body: { op: 'replay', a: { id } } });
+  if (!S.rp || S.rp.id !== id) return;
+  S.rp.loading = false;
+  if (error || !data || data.err || !data.out) { S.rp.err = (data && data.err) || (error && error.message) || 'erro'; rpDraw(); return; }
+  S.rp.data = data.out; S.rp.playing = true; rpDraw(); rpTick();
+}
+function rpClose() { if (S.rp && S.rp.t) clearTimeout(S.rp.t); S.rp = null; const o = document.getElementById('rp'); if (o) o.remove(); }
+function rpTick() {
+  const R = S.rp; if (!R) return; if (R.t) clearTimeout(R.t);
+  if (!R.data || !R.playing) return;
+  const n = R.data.frames.length;
+  if (R.i >= n) { R.playing = false; rpDraw(); return; }
+  R.t = setTimeout(() => {
+    if (!S.rp || !S.rp.playing) return;
+    if (R.i < 0) { R.i = 0; R.ph = 0; } else if (R.ph < 2) R.ph++; else { R.i++; R.ph = 0; }
+    rpDraw(); rpTick();
+  }, (R.i < 0 ? 1600 : RP_PH[R.ph]) / R.speed);
+}
+function rpCard(x, hide, cls) {
+  if (hide) return '<div class="rpc back">?</div>';
+  const c = (S.cat && S.cat.cards || []).find((k) => k.id === x.id);
+  const st = c && c.s ? '<div class="rpc-s">' + c.s.map((v, k) => '<span class="' + ((x.attrs || []).includes(k) ? 'on' : '') + '"><small>' + ATTR_S[k] + '</small>' + v + '</span>').join('') + '</div>' : '';
+  return '<div class="rpc' + (cls || '') + '" style="--rc:' + (RCOL[x.rar] || '#999') + '"><b>' + esc(x.n || x.id) + '</b><small>' + esc(x.rar || '') + ' · ' + esc(FAC[x.fac] || x.fac || '') + (c && c.el ? ' · ' + esc(c.el) : '') + '</small>' + st + (c && c.pas ? '<p>' + esc(c.pas) + '</p>' : '') + '</div>';
+}
+function rpUsed(x) {
+  return [x.eqn ? '<span class="pill">🗡 ' + esc(x.eqn) + '</span>' : '', x.act ? '<span class="pill' + (x.act.used ? ' p-gold' : '') + '">' + esc(x.act.n) + (x.act.used ? '' : ' (anulada)') + '</span>' : '',
+    x.cmd ? '<span class="pill p-gold">★ ' + esc(typeof x.cmd === 'string' ? x.cmd : 'Comandante') + '</span>' : '', x.boost ? '<span class="pill">+' + x.boost + ' reforço</span>' : ''].join(' ');
+}
+function rpDraw() {
+  let o = document.getElementById('rp');
+  if (!S.rp) { if (o) o.remove(); return; }
+  if (!o) { o = document.createElement('div'); o.id = 'rp'; o.className = 'rp-ov'; document.body.appendChild(o); }
+  const R = S.rp, D = R.data;
+  const top = '<div class="rp-top"><b>Replay</b>' + (D ? '<span class="muted">' + esc(D.nick) + ' · ' + dt(D.at) + '</span>' : '') + '<button class="btn sm" data-act="rp-exit">Sair</button></div>';
+  if (R.loading || R.err || !D) { o.innerHTML = '<div class="rp-box">' + top + '<p class="muted pad">' + (R.loading ? 'Preparando o replay…' : R.err === 'versao' ? 'Partida de uma versão antiga: o servidor não guarda mais essas regras.' : 'Não deu para abrir o replay: ' + esc(R.err)) + '</p></div>'; return; }
+  const F = D.frames, n = F.length, i = R.i, f = i >= 0 && i < n ? F[i] : null, prev = i > 0 ? F[Math.min(i, n) - 1] : null;
+  const hp = f && R.ph >= 2 ? f.hp : (prev ? prev.hp : D.head.hp), sc = f && R.ph >= 2 ? f.sc : (prev ? prev.sc : [0, 0]);
+  const max = (D.head.hp && D.head.hp[0]) || 30;
+  const bar = (v, foe) => '<span class="rp-hp' + (foe ? ' foe' : '') + '"><i style="width:' + Math.max(0, Math.round(100 * v / max)) + '%"></i><b>' + v + '</b></span>';
+  const board = '<div class="rp-board"><div><small>JOGADOR</small>' + (hp ? bar(hp[0]) : '<b>' + sc[0] + '</b>') + '</div><div class="c"><small>' + (f ? (f.sudden ? 'MORTE SÚBITA' : 'RODADA ' + f.r) : i >= n ? 'FIM' : 'INÍCIO') + '</small><b>' + esc((f && f.field) || D.head.field || '') + '</b></div><div class="r"><small>' + esc(D.nick) + ' (bot)</small>' + (hp ? bar(hp[1], true) : '<b>' + sc[1] + '</b>') + '</div></div>';
+  let stage;
+  if (!f && i < 0) stage = '<div class="rp-msg"><b>Jogador × ' + esc(D.nick) + '</b><p>Campo: ' + esc(D.head.field) + '</p>' + (D.head.p.cmd ? '<p>Comandante do jogador: ' + esc(D.head.p.cmd.n) + '</p>' : '') + (D.head.a.cmd ? '<p>Comandante do bot: ' + esc(D.head.a.cmd.n) + '</p>' : '') + '<p class="muted">Deck: ' + (D.deck || []).length + ' cartas · ' + n + ' duelos</p></div>';
+  else if (!f) stage = '<div class="rp-msg"><b>' + (D.end.sign > 0 ? 'Vitória do jogador' : D.end.sign < 0 ? 'Derrota do jogador' : 'Empate') + '</b>' + (D.status === 'refused' ? '<p class="bad">Recusada pelo servidor: ' + esc(D.why || '') + (D.end.stop ? ' (parou em: ' + esc(D.end.stop) + ')' : '') + '</p>' : '') + (D.end.surrender ? '<p>' + (D.end.complete ? 'Terminou por desistência.' : 'Não terminou (abandonada).') + '</p>' : '') + '</div>';
+  else {
+    const win = (k) => (R.ph >= 2 ? (f.w === k ? ' win' : f.w ? ' lost' : '') : '');
+    const tot = (x, k) => '<div class="rp-tot' + win(k) + '">' + (R.ph >= 1 ? x.total : '?') + '</div>';
+    const calc = (x) => (R.ph >= 1 ? '<ul class="rp-calc">' + (x.L || []).map((l) => '<li><span>' + esc(l[0]) + '</span><b>' + (l[1] > 0 && l[2] !== 'base' ? '+' : '') + l[1] + '</b></li>').join('') + '</ul>' : '');
+    stage = '<div class="rp-duel"><div><small class="you">JOGADOR · ' + (f.sudden ? 'ÀS CEGAS' : f.att === 'p' ? 'ATACA' : 'DEFENDE') + '</small>' + rpCard(f.p, false, win('p')) + '<div class="rp-used">' + rpUsed(f.p) + '</div>' + tot(f.p, 'p') + calc(f.p) + '</div>'
+      + '<div class="rp-vs">VS</div><div><small class="foe">' + esc(D.nick) + ' · ' + (f.sudden ? 'ÀS CEGAS' : f.att === 'a' ? 'ATACA' : 'DEFENDE') + '</small>' + rpCard(f.a, R.ph < 1 && f.att !== 'a', win('a')) + '<div class="rp-used">' + (R.ph >= 1 || f.att === 'a' ? rpUsed(f.a) : '') + '</div>' + tot(f.a, 'a') + calc(f.a) + '</div></div>'
+      + (R.ph >= 2 ? '<p class="rp-w">' + (f.w === 'p' ? 'Jogador venceu o duelo' : f.w === 'a' ? esc(D.nick) + ' venceu o duelo' : 'Empate') + ' · Essência ' + f.ki[0] + ' × ' + f.ki[1] + '</p>' : '');
+  }
+  const prog = n ? Math.round(100 * Math.max(0, Math.min(n, i + (f ? (R.ph + 1) / 3 : 0))) / n) : 100;
+  const ctr = '<div class="rp-ctr"><div class="rp-prog"><i style="width:' + prog + '%"></i><span>' + (i < 0 ? 'Início' : i >= n ? 'Fim' : 'Duelo ' + (i + 1) + ' de ' + n) + '</span></div>'
+    + '<div class="rp-btns"><button class="btn ' + (R.playing ? '' : 'go') + '" data-act="rp-play">' + (R.playing ? '❚❚ Pausa' : '▶ Play') + '</button>'
+    + [2, 3, 4, 6].map((s) => '<button class="btn' + (R.speed === s ? ' on' : '') + '" data-act="rp-speed" data-v="' + s + '">' + s + 'x</button>').join('')
+    + '<button class="btn danger" data-act="rp-exit">Sair</button></div></div>';
+  o.innerHTML = '<div class="rp-box">' + top + board + '<div class="rp-stage">' + stage + '</div>' + ctr + '</div>';
 }
 
 /* ---------- EVENTOS ---------- */
@@ -457,6 +534,14 @@ document.addEventListener('click', async (e) => {
     } else if (act === 'save-bal') {
       if (await saveCfg('balance', Object.assign({}, S.cfg.balance || {}, { cards: S.bal }))) { S.bal = JSON.parse(JSON.stringify(S.bal)); toast('Ajustes publicados. Os jogadores recebem ao abrir o jogo.'); render(); }
     } else if (act === 'bal-reset') { delete S.bal[v]; render(); }
+    else if (act === 'rp-find') {
+      const { data, error } = await sb.rpc('admin_recent_matches', { p_email: val('rp-email') || null, p_days: S.days || 30 }); if (error) return fail(error);
+      S.rpList = data || []; render();
+    }
+    else if (act === 'rp-open') rpOpen(v);
+    else if (act === 'rp-play') { if (S.rp && S.rp.data) { if (S.rp.i >= S.rp.data.frames.length) { S.rp.i = -1; S.rp.ph = 0; } S.rp.playing = !S.rp.playing; rpDraw(); rpTick(); } }
+    else if (act === 'rp-speed') { if (S.rp) { S.rp.speed = S.rp.speed === +v ? 1 : +v; if (S.rp.data) S.rp.playing = true; rpDraw(); rpTick(); } }
+    else if (act === 'rp-exit') { rpClose(); }
     else if (act === 'econ-toggle') {
       const on = !(S.cfg.econ && S.cfg.econ.on);
       if (on && !confirm('Ligar a economia no servidor? Confirme que a função game já foi publicada.')) return;
