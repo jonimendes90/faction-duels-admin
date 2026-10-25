@@ -464,7 +464,7 @@ document.addEventListener('click', async (e) => {
     } else if (act === 'econ-tester') {
       const email = val('ec-email'); if (!email) return toast('Digite o e-mail.', true);
       const { data, error } = await sb.rpc('admin_set_tester', { p_email: email, p_on: v === '1' }); if (error) return fail(error);
-      if (!data) return toast('Conta não encontrada no servidor (ela precisa ter aberto o app com a economia ligada).', true);
+      if (!data) return toast('Nenhuma conta com esse e-mail no jogo.', true);
       toast(v === '1' ? 'Conta marcada como teste.' : 'Conta desmarcada.'); S.econ = null; render();
     }
     else if (act === 'match-save') {
