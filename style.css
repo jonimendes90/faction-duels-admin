@@ -140,3 +140,23 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .rp-btns .btn.on { background: rgba(242,196,90,.18); color: var(--gold); border-color: var(--gold); }
 @keyframes rpIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @media (max-width: 520px) { .rpc p { display: none; } .rp-calc { font-size: 11px; } }
+/* replay como partida (mãos, jogadas, linha do tempo) */
+button.rpc { font: inherit; color: inherit; text-align: left; cursor: pointer; width: 100%; }
+.rpc.empty { min-height: 120px; border: 2px dashed var(--line); border-radius: 10px; }
+.rp-pbar { display: flex; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--panel2); }
+.rp-pbar > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rp-pbar .r { align-items: flex-end; text-align: right; }
+.rp-hand { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.rpm { border: 1px solid var(--rc); border-radius: 8px; padding: 6px 8px; background: rgba(255,255,255,.03); color: inherit; font: inherit; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rpm b { font-size: 12px; color: var(--rc); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rpm span { font-size: 10.5px; color: var(--muted); }
+.rpm.atk { box-shadow: 0 0 0 2px var(--bad), 0 0 12px rgba(255,122,107,.5); }
+.rp-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.rp-duel2c { display: grid; grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr); gap: 10px; }
+.rp-duel2c > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rp-tl { display: flex; align-items: center; gap: 8px; }
+.rp-tl input { flex: 1; min-width: 0; accent-color: var(--gold); }
+.rp-zoom { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.6); display: grid; place-items: center; padding: 16px; }
+.rp-zbox { width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.rp-zbox > b { font-family: Cinzel, serif; font-size: 18px; }
+.rp-zbox p { margin: 0; color: #cfc6b3; }

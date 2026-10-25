@@ -329,7 +329,7 @@ function econHTML() {
 const ATTR = ['FORÇA', 'DEFESA', 'VELOCIDADE', 'ENERGIA', 'TÉCNICA', 'INTELIGÊNCIA'];
 const ATTR_S = ['FOR', 'DEF', 'VEL', 'ENE', 'TEC', 'INT'];
 const RCOL = { 'Comum': '#c3cad5', 'Rara': '#5aa2ff', 'Épica': '#b77cff', 'Lendária': '#ffcf4d' };
-const RP_PH = [1100, 1300, 1700];
+const RP_MS = { round: 1300, eq: 1500, mull: 1000, play: 1400, duel: 2800, end: 0 };
 function rpRes(m) {
   if (m.status === 'refused') return '<span class="pill p-bad">Recusada</span>';
   if (m.status === 'abandoned') return '<span class="pill">Abandonada</span>';
@@ -337,34 +337,45 @@ function rpRes(m) {
   return sg > 0 ? '<span class="pill p-good">Vitória</span>' : sg < 0 ? '<span class="pill p-bad">Derrota</span>' : '<span class="pill">Empate</span>';
 }
 async function rpOpen(id) {
-  S.rp = { id, loading: true, i: -1, ph: 0, playing: false, speed: 1 }; rpDraw();
+  S.rp = { id, loading: true, k: 0, playing: false, speed: 1, zoom: null }; rpDraw();
   const { data, error } = await sb.functions.invoke('game', { body: { op: 'replay', a: { id } } });
   if (!S.rp || S.rp.id !== id) return;
   S.rp.loading = false;
-  if (error || !data || data.err || !data.out) { S.rp.err = (data && data.err) || (error && error.message) || 'erro'; rpDraw(); return; }
+  if (error || !data || data.err || !data.out || !data.out.steps) { S.rp.err = (data && data.err) || (error && error.message) || 'erro'; rpDraw(); return; }
   S.rp.data = data.out; S.rp.playing = true; rpDraw(); rpTick();
 }
 function rpClose() { if (S.rp && S.rp.t) clearTimeout(S.rp.t); S.rp = null; const o = document.getElementById('rp'); if (o) o.remove(); }
 function rpTick() {
   const R = S.rp; if (!R) return; if (R.t) clearTimeout(R.t);
-  if (!R.data || !R.playing) return;
-  const n = R.data.frames.length;
-  if (R.i >= n) { R.playing = false; rpDraw(); return; }
-  R.t = setTimeout(() => {
-    if (!S.rp || !S.rp.playing) return;
-    if (R.i < 0) { R.i = 0; R.ph = 0; } else if (R.ph < 2) R.ph++; else { R.i++; R.ph = 0; }
-    rpDraw(); rpTick();
-  }, (R.i < 0 ? 1600 : RP_PH[R.ph]) / R.speed);
+  if (!R.data || !R.playing || R.zoom) return;
+  const St = R.data.steps;
+  if (R.k >= St.length - 1) { R.playing = false; rpDraw(); return; }
+  R.t = setTimeout(() => { if (!S.rp || !S.rp.playing) return; R.k++; rpDraw(); rpTick(); }, (RP_MS[St[R.k].t] || 1200) / R.speed);
 }
-function rpCard(x, hide, cls) {
-  if (hide) return '<div class="rpc back">?</div>';
-  const c = (S.cat && S.cat.cards || []).find((k) => k.id === x.id);
+function rpSeek(k) { const R = S.rp; if (!R || !R.data) return; R.k = Math.max(0, Math.min(R.data.steps.length - 1, k)); rpDraw(); if (R.playing) rpTick(); }
+const rpCat = (id) => (S.cat && S.cat.cards || []).find((k) => k.id === id);
+const eqN = (id) => { const e = (S.cat && S.cat.eqs || []).find((x) => x.id === id); return e ? e.nome : id; };
+function rpMini(id, cls) {
+  const c = rpCat(id);
+  return '<button class="rpm' + (cls || '') + '" data-act="rp-zoom" data-v="' + esc(id) + '" style="--rc:' + (c ? RCOL[c.rar] : '#888') + '"><b>' + esc(c ? c.nome : id) + '</b>'
+    + (c && c.s ? '<span>' + c.s.map((v, k) => ATTR_S[k] + ' ' + v).join(' · ') + '</span>' : '') + '</button>';
+}
+function rpCard(x, cls) {
+  if (!x) return '<div class="rpc empty"></div>';
+  if (x.back) return '<div class="rpc back">' + (x.badge ? esc(x.badge) : '?') + '</div>';
+  const c = rpCat(x.id);
   const st = c && c.s ? '<div class="rpc-s">' + c.s.map((v, k) => '<span class="' + ((x.attrs || []).includes(k) ? 'on' : '') + '"><small>' + ATTR_S[k] + '</small>' + v + '</span>').join('') + '</div>' : '';
-  return '<div class="rpc' + (cls || '') + '" style="--rc:' + (RCOL[x.rar] || '#999') + '"><b>' + esc(x.n || x.id) + '</b><small>' + esc(x.rar || '') + ' · ' + esc(FAC[x.fac] || x.fac || '') + (c && c.el ? ' · ' + esc(c.el) : '') + '</small>' + st + (c && c.pas ? '<p>' + esc(c.pas) + '</p>' : '') + '</div>';
+  return '<button class="rpc' + (cls || '') + '" data-act="rp-zoom" data-v="' + esc(x.id) + '" style="--rc:' + (c ? RCOL[c.rar] : '#999') + '"><b>' + esc(c ? c.nome : x.n || x.id) + '</b><small>' + esc(c ? c.rar : '') + ' · ' + esc(c ? (FAC[c.fac] || c.fac) : '') + (c && c.el ? ' · ' + esc(c.el) : '') + '</small>' + st + '</button>';
 }
 function rpUsed(x) {
   return [x.eqn ? '<span class="pill">🗡 ' + esc(x.eqn) + '</span>' : '', x.act ? '<span class="pill' + (x.act.used ? ' p-gold' : '') + '">' + esc(x.act.n) + (x.act.used ? '' : ' (anulada)') + '</span>' : '',
     x.cmd ? '<span class="pill p-gold">★ ' + esc(typeof x.cmd === 'string' ? x.cmd : 'Comandante') + '</span>' : '', x.boost ? '<span class="pill">+' + x.boost + ' reforço</span>' : ''].join(' ');
+}
+function rpBar(sn, who, cmd, max) {
+  if (!sn) return '';
+  const hp = sn.hp != null ? '<span class="rp-hp' + (who === 'a' ? ' foe' : '') + '"><i style="width:' + Math.max(0, Math.round(100 * sn.hp / max)) + '%"></i><b>' + sn.hp + '</b></span>' : '<b>' + sn.sc + '</b>';
+  return '<div class="rp-pbar"><div><b>' + esc(who === 'a' ? S.rp.data.nick + ' (bot)' : 'Jogador') + '</b>' + (cmd ? '<small>' + esc(cmd.n) + '</small>' : '') + hp + '</div><div class="r"><small>Essência</small><b>' + sn.ki + '/5</b>'
+    + (sn.eq && sn.eq.length ? '<small>Mochila: ' + sn.eq.map((id) => esc(eqN(id))).join(', ') + '</small>' : '') + '</div></div>';
 }
 function rpDraw() {
   let o = document.getElementById('rp');
@@ -373,29 +384,45 @@ function rpDraw() {
   const R = S.rp, D = R.data;
   const top = '<div class="rp-top"><b>Replay</b>' + (D ? '<span class="muted">' + esc(D.nick) + ' · ' + dt(D.at) + '</span>' : '') + '<button class="btn sm" data-act="rp-exit">Sair</button></div>';
   if (R.loading || R.err || !D) { o.innerHTML = '<div class="rp-box">' + top + '<p class="muted pad">' + (R.loading ? 'Preparando o replay…' : R.err === 'versao' ? 'Partida de uma versão antiga: o servidor não guarda mais essas regras.' : 'Não deu para abrir o replay: ' + esc(R.err)) + '</p></div>'; return; }
-  const F = D.frames, n = F.length, i = R.i, f = i >= 0 && i < n ? F[i] : null, prev = i > 0 ? F[Math.min(i, n) - 1] : null;
-  const hp = f && R.ph >= 2 ? f.hp : (prev ? prev.hp : D.head.hp), sc = f && R.ph >= 2 ? f.sc : (prev ? prev.sc : [0, 0]);
-  const max = (D.head.hp && D.head.hp[0]) || 30;
-  const bar = (v, foe) => '<span class="rp-hp' + (foe ? ' foe' : '') + '"><i style="width:' + Math.max(0, Math.round(100 * v / max)) + '%"></i><b>' + v + '</b></span>';
-  const board = '<div class="rp-board"><div><small>JOGADOR</small>' + (hp ? bar(hp[0]) : '<b>' + sc[0] + '</b>') + '</div><div class="c"><small>' + (f ? (f.sudden ? 'MORTE SÚBITA' : 'RODADA ' + f.r) : i >= n ? 'FIM' : 'INÍCIO') + '</small><b>' + esc((f && f.field) || D.head.field || '') + '</b></div><div class="r"><small>' + esc(D.nick) + ' (bot)</small>' + (hp ? bar(hp[1], true) : '<b>' + sc[1] + '</b>') + '</div></div>';
-  let stage;
-  if (!f && i < 0) stage = '<div class="rp-msg"><b>Jogador × ' + esc(D.nick) + '</b><p>Campo: ' + esc(D.head.field) + '</p>' + (D.head.p.cmd ? '<p>Comandante do jogador: ' + esc(D.head.p.cmd.n) + '</p>' : '') + (D.head.a.cmd ? '<p>Comandante do bot: ' + esc(D.head.a.cmd.n) + '</p>' : '') + '<p class="muted">Deck: ' + (D.deck || []).length + ' cartas · ' + n + ' duelos</p></div>';
-  else if (!f) stage = '<div class="rp-msg"><b>' + (D.end.sign > 0 ? 'Vitória do jogador' : D.end.sign < 0 ? 'Derrota do jogador' : 'Empate') + '</b>' + (D.status === 'refused' ? '<p class="bad">Recusada pelo servidor: ' + esc(D.why || '') + (D.end.stop ? ' (parou em: ' + esc(D.end.stop) + ')' : '') + '</p>' : '') + (D.end.surrender ? '<p>' + (D.end.complete ? 'Terminou por desistência.' : 'Não terminou (abandonada).') + '</p>' : '') + '</div>';
-  else {
-    const win = (k) => (R.ph >= 2 ? (f.w === k ? ' win' : f.w ? ' lost' : '') : '');
-    const tot = (x, k) => '<div class="rp-tot' + win(k) + '">' + (R.ph >= 1 ? x.total : '?') + '</div>';
-    const calc = (x) => (R.ph >= 1 ? '<ul class="rp-calc">' + (x.L || []).map((l) => '<li><span>' + esc(l[0]) + '</span><b>' + (l[1] > 0 && l[2] !== 'base' ? '+' : '') + l[1] + '</b></li>').join('') + '</ul>' : '');
-    stage = '<div class="rp-duel"><div><small class="you">JOGADOR · ' + (f.sudden ? 'ÀS CEGAS' : f.att === 'p' ? 'ATACA' : 'DEFENDE') + '</small>' + rpCard(f.p, false, win('p')) + '<div class="rp-used">' + rpUsed(f.p) + '</div>' + tot(f.p, 'p') + calc(f.p) + '</div>'
-      + '<div class="rp-vs">VS</div><div><small class="foe">' + esc(D.nick) + ' · ' + (f.sudden ? 'ÀS CEGAS' : f.att === 'a' ? 'ATACA' : 'DEFENDE') + '</small>' + rpCard(f.a, R.ph < 1 && f.att !== 'a', win('a')) + '<div class="rp-used">' + (R.ph >= 1 || f.att === 'a' ? rpUsed(f.a) : '') + '</div>' + tot(f.a, 'a') + calc(f.a) + '</div></div>'
-      + (R.ph >= 2 ? '<p class="rp-w">' + (f.w === 'p' ? 'Jogador venceu o duelo' : f.w === 'a' ? esc(D.nick) + ' venceu o duelo' : 'Empate') + ' · Essência ' + f.ki[0] + ' × ' + f.ki[1] + '</p>' : '');
-  }
-  const prog = n ? Math.round(100 * Math.max(0, Math.min(n, i + (f ? (R.ph + 1) / 3 : 0))) / n) : 100;
-  const ctr = '<div class="rp-ctr"><div class="rp-prog"><i style="width:' + prog + '%"></i><span>' + (i < 0 ? 'Início' : i >= n ? 'Fim' : 'Duelo ' + (i + 1) + ' de ' + n) + '</span></div>'
+  const St = D.steps, k = Math.max(0, Math.min(St.length - 1, R.k)), st = St[k], max = (D.head.hp && D.head.hp[0]) || 30;
+  let ph = st.p ? st.p.hand.slice() : [], ah = st.a ? st.a.hand.slice() : [], L = null, Rr = null, cap = '', aiIdx = -1, extra = '';
+  const atkA = st.ai && st.att === 'a' && !st.sudden ? st.ai : null;
+  if (st.t === 'round') { cap = st.sudden ? 'Morte súbita' : st.att === 'p' ? 'Rodada ' + st.r + ' · jogador ataca' : 'Rodada ' + st.r + ' · ' + esc(D.nick) + ' ataca com ' + (atkA ? ATTR[atkA.attr] : '?'); if (atkA) { aiIdx = atkA.i; Rr = { back: true, badge: ATTR_S[atkA.attr] }; } }
+  else if (st.t === 'eq') { cap = 'Equipamento: escolheu ' + esc(eqN(st.pick)) + (st.offer.length > 1 ? ' (oferta: ' + st.offer.map((x) => esc(eqN(x))).join(' / ') + ')' : ''); if (atkA) { aiIdx = atkA.i; Rr = { back: true, badge: ATTR_S[atkA.attr] }; } }
+  else if (st.t === 'mull') cap = 'Jogador trocou a mão';
+  else if (st.t === 'play') {
+    const s = st.sel, id = ph[s.i], c = rpCat(id); L = { id, attrs: s.attr != null ? [s.attr] : [] }; ph.splice(s.i, 1);
+    Rr = atkA ? { back: true, badge: ATTR_S[atkA.attr] } : { back: true }; if (atkA) aiIdx = atkA.i;
+    cap = 'Jogador joga ' + esc(c ? c.nome : id) + (s.attr != null ? ' com ' + ATTR[s.attr] : '') + [s.act ? ' · habilidade' : '', s.eq != null && st.p.eq[s.eq] ? ' · equipamento ' + esc(eqN(st.p.eq[s.eq])) : '', s.cmd ? ' · Comandante' : '', s.boost ? ' · +' + s.boost + ' reforço' : ''].join('');
+  } else if (st.t === 'duel') {
+    const f = st.duel; L = f.p; Rr = f.a;
+    cap = (f.w === 'p' ? 'Jogador venceu o duelo' : f.w === 'a' ? esc(D.nick) + ' venceu o duelo' : 'Empate') + ' · ' + f.p.total + ' × ' + f.a.total;
+    const calc = (x) => '<ul class="rp-calc">' + (x.L || []).map((l) => '<li><span>' + esc(l[0]) + '</span><b>' + (l[1] > 0 && l[2] !== 'base' ? '+' : '') + l[1] + '</b></li>').join('') + '</ul>';
+    extra = '<div class="rp-duel2c"><div><div class="rp-tot' + (f.w === 'p' ? ' win' : ' lost') + '">' + f.p.total + '</div><div class="rp-used">' + rpUsed(f.p) + '</div>' + calc(f.p) + '</div><div></div><div><div class="rp-tot' + (f.w === 'a' ? ' win' : ' lost') + '">' + f.a.total + '</div><div class="rp-used">' + rpUsed(f.a) + '</div>' + calc(f.a) + '</div></div>';
+  } else if (st.t === 'end') { const e = st.end || D.end; cap = (e.sign > 0 ? 'Vitória do jogador' : e.sign < 0 ? 'Derrota do jogador' : 'Empate') + (D.status === 'refused' ? ' · RECUSADA: ' + esc(D.why || '') + (e.stop ? ' (parou em: ' + esc(e.stop) + ')' : '') : e.surrender ? (e.complete ? ' · desistência' : ' · não terminou') : ''); }
+  const win = st.t === 'duel' ? st.duel.w : null;
+  const table = rpBar(st.a, 'a', D.head.a.cmd, max)
+    + '<div class="rp-hand">' + ah.map((id, i) => rpMini(id, i === aiIdx ? ' atk' : '')).join('') + '</div>'
+    + '<div class="rp-chips"><span class="pill">' + esc(st.fieldN || D.head.field || '') + '</span><span class="pill">' + (st.sudden ? 'MORTE SÚBITA' : 'RODADA ' + (st.r || 1)) + '</span>' + (st.sealed != null ? '<span class="pill p-bad">PROIBIDO: ' + ATTR_S[st.sealed] + '</span>' : '') + '</div>'
+    + '<div class="rp-duel"><div>' + rpCard(L, win === 'p' ? ' win' : win === 'a' ? ' lost' : '') + '</div><div class="rp-vs">VS</div><div>' + rpCard(Rr, win === 'a' ? ' win' : win === 'p' ? ' lost' : '') + '</div></div>'
+    + extra + '<p class="rp-w">' + cap + '</p>'
+    + '<div class="rp-hand">' + ph.map((id) => rpMini(id)).join('') + '</div>'
+    + rpBar(st.p, 'p', D.head.p.cmd, max);
+  const ctr = '<div class="rp-ctr"><div class="rp-tl"><button class="btn" data-act="rp-step" data-v="-1">◀</button><input type="range" id="rp-seek" min="0" max="' + (St.length - 1) + '" value="' + k + '"><button class="btn" data-act="rp-step" data-v="1">▶</button><span class="muted">' + (k + 1) + '/' + St.length + '</span></div>'
     + '<div class="rp-btns"><button class="btn ' + (R.playing ? '' : 'go') + '" data-act="rp-play">' + (R.playing ? '❚❚ Pausa' : '▶ Play') + '</button>'
     + [2, 3, 4, 6].map((s) => '<button class="btn' + (R.speed === s ? ' on' : '') + '" data-act="rp-speed" data-v="' + s + '">' + s + 'x</button>').join('')
     + '<button class="btn danger" data-act="rp-exit">Sair</button></div></div>';
-  o.innerHTML = '<div class="rp-box">' + top + board + '<div class="rp-stage">' + stage + '</div>' + ctr + '</div>';
+  let zoom = '';
+  if (R.zoom) {
+    const c = rpCat(R.zoom);
+    zoom = '<div class="rp-zoom" data-act="rp-unzoom"><div class="rp-zbox">' + (c ? '<b style="color:' + RCOL[c.rar] + '">' + esc(c.nome) + '</b><small class="muted">' + esc(c.rar) + ' · ' + esc(FAC[c.fac] || c.fac) + ' · ' + esc(c.el || '') + '</small>'
+      + '<div class="rpc-s">' + c.s.map((v, k) => '<span><small>' + ATTR_S[k] + '</small>' + v + '</span>').join('') + '</div><p>' + esc(c.pas || '') + '</p>' + (c.act ? '<p><b>' + esc(c.act.nome) + '</b> (' + c.act.cost + ' Essência): ' + esc(c.act.txt) + '</p>' : '') : esc(R.zoom))
+      + '<button class="btn go" data-act="rp-unzoom">Fechar</button></div></div>';
+  }
+  o.innerHTML = '<div class="rp-box">' + top + '<div class="rp-stage">' + table + '</div>' + ctr + '</div>' + zoom;
 }
+document.addEventListener('input', (e) => { if (e.target && e.target.id === 'rp-seek' && S.rp) { if (S.rp.t) clearTimeout(S.rp.t); S.rp.k = +e.target.value; rpDraw(); const el = document.getElementById('rp-seek'); if (el) el.focus(); } });
+document.addEventListener('change', (e) => { if (e.target && e.target.id === 'rp-seek' && S.rp && S.rp.playing) rpTick(); });
 
 /* ---------- EVENTOS ---------- */
 async function loadEvents() { const { data, error } = await sb.from('live_events').select('*').order('starts_at', { ascending: false }).limit(100); if (error) throw error; S.events = data; }
@@ -539,7 +566,10 @@ document.addEventListener('click', async (e) => {
       S.rpList = data || []; render();
     }
     else if (act === 'rp-open') rpOpen(v);
-    else if (act === 'rp-play') { if (S.rp && S.rp.data) { if (S.rp.i >= S.rp.data.frames.length) { S.rp.i = -1; S.rp.ph = 0; } S.rp.playing = !S.rp.playing; rpDraw(); rpTick(); } }
+    else if (act === 'rp-play') { if (S.rp && S.rp.data) { if (S.rp.k >= S.rp.data.steps.length - 1) S.rp.k = 0; S.rp.playing = !S.rp.playing; rpDraw(); rpTick(); } }
+    else if (act === 'rp-step') { if (S.rp) { if (S.rp.t) clearTimeout(S.rp.t); S.rp.playing = false; rpSeek(S.rp.k + (+v)); } }
+    else if (act === 'rp-zoom') { if (S.rp) { if (S.rp.t) clearTimeout(S.rp.t); S.rp.zoom = v; rpDraw(); } }
+    else if (act === 'rp-unzoom') { if (S.rp && (!e.target.closest('.rp-zbox') || e.target.closest('.btn'))) { S.rp.zoom = null; rpDraw(); rpTick(); } }
     else if (act === 'rp-speed') { if (S.rp) { S.rp.speed = S.rp.speed === +v ? 1 : +v; if (S.rp.data) S.rp.playing = true; rpDraw(); rpTick(); } }
     else if (act === 'rp-exit') { rpClose(); }
     else if (act === 'econ-toggle') {
