@@ -290,6 +290,8 @@ function matchHTML() {
 /* ---------- ECONOMIA (progresso no servidor, partidas conferidas) ---------- */
 async function loadEcon() {
   const [a, b] = await Promise.all([sb.rpc('admin_game_summary', { p_days: S.days || 7 }), sb.rpc('admin_game_matches', { p_days: S.days || 7 })]);
+  // server not published yet: the tables and functions of docs/supabase-economy.sql do not exist
+  if (a.error && /could not find the function|does not exist/i.test(a.error.message || '')) { S.econ = { missing: true, sum: {}, list: [] }; return; }
   if (a.error) throw a.error;
   S.econ = { sum: a.data || {}, list: b.data || [] };
 }
@@ -297,6 +299,12 @@ function econHTML() {
   const kpi = (t, v) => '<div class="card kpi"><small>' + t + '</small><b>' + v + '</b></div>';
   const on = !!(S.cfg.econ && S.cfg.econ.on), s = S.econ.sum || {}, L = S.econ.list || [];
   const why = (m) => m.status === 'abandoned' ? 'Não terminou (o app fechou ou perdeu a conexão)' : esc(m.why || '—');
+  if (S.econ.missing) return '<h1>Economia</h1><div class="card"><h2>Servidor ainda não publicado</h2>'
+    + '<p>As tabelas e a função <code>game</code> ainda não existem no Supabase, por isso esta aba não tem o que mostrar.</p>'
+    + '<ol style="line-height:1.7;padding-left:20px"><li>No GitHub, repositório <b>faction-duels</b>: Settings → Secrets and variables → Actions. Confira se existe o segredo <code>SUPABASE_ACCESS_TOKEN</code>.</li>'
+    + '<li>Abra Actions → <b>Servidor do jogo</b> → Run workflow → Run workflow.</li>'
+    + '<li>Espere ficar verde (cerca de 2 minutos) e recarregue esta página.</li></ol>'
+    + '<p class="muted">Enquanto isso o jogo continua guardando o progresso no celular, como antes.</p></div>';
   return '<h1>Economia</h1><p class="sub">Com a economia no servidor, ouro, fragmentos, cartas, pacotes, níveis e missões só mudam pela função <code>game</code>. Cada partida online é repetida no servidor antes de pagar.</p>'
     + '<div class="card"><h2>Economia no servidor</h2><p>' + (on ? '<span class="pill p-good">Ligada</span> O app usa o servidor para tudo (contas com login).' : '<span class="pill p-gold">Desligada</span> O app ainda guarda o progresso no celular.') + '</p>'
     + '<p class="muted">Ligue só depois que a função <code>game</code> estiver publicada (GitHub → Actions → “Servidor do jogo” com sucesso). Ao ligar, o progresso de cada conta é copiado uma vez para o servidor (com limites: 20 mil de ouro e de fragmentos, 50 pacotes).</p>'
