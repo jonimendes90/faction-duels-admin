@@ -382,7 +382,7 @@ function rpDraw() {
   if (!S.rp) { if (o) o.remove(); return; }
   if (!o) { o = document.createElement('div'); o.id = 'rp'; o.className = 'rp-ov'; document.body.appendChild(o); }
   const R = S.rp, D = R.data;
-  const top = '<div class="rp-top"><b>Replay</b>' + (D ? '<span class="muted">' + esc(D.nick) + ' · ' + dt(D.at) + '</span>' : '') + '<button class="btn sm" data-act="rp-exit">Sair</button></div>';
+  const top = '<div class="rp-top"><b>Replay</b>' + (D ? '<span class="muted">' + esc(D.nick) + ' · ' + dt(D.at) + '</span>' : '') + (D && D.raw ? '<button class="btn sm" data-act="rp-raw">Copiar dados</button>' : '') + '<button class="btn sm" data-act="rp-exit">Sair</button></div>';
   if (R.loading || R.err || !D) { o.innerHTML = '<div class="rp-box">' + top + '<p class="muted pad">' + (R.loading ? 'Preparando o replay…' : R.err === 'versao' ? 'Partida de uma versão antiga: o servidor não guarda mais essas regras.' : 'Não deu para abrir o replay: ' + esc(R.err)) + '</p></div>'; return; }
   const St = D.steps, k = Math.max(0, Math.min(St.length - 1, R.k)), st = St[k], max = (D.head.hp && D.head.hp[0]) || 30;
   let ph = st.p ? st.p.hand.slice() : [], ah = st.a ? st.a.hand.slice() : [], L = null, Rr = null, cap = '', aiIdx = -1, extra = '';
@@ -572,6 +572,11 @@ document.addEventListener('click', async (e) => {
     else if (act === 'rp-unzoom') { if (S.rp && (!e.target.closest('.rp-zbox') || e.target.closest('.btn'))) { S.rp.zoom = null; rpDraw(); rpTick(); } }
     else if (act === 'rp-speed') { if (S.rp) { S.rp.speed = S.rp.speed === +v ? 1 : +v; if (S.rp.data) S.rp.playing = true; rpDraw(); rpTick(); } }
     else if (act === 'rp-exit') { rpClose(); }
+    else if (act === 'rp-raw') {
+      const txt = JSON.stringify(S.rp && S.rp.data && S.rp.data.raw);
+      try { await navigator.clipboard.writeText(txt); toast('Dados da partida copiados. Cole na conversa com o Claude.'); }
+      catch (err) { const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Dados da partida copiados.'); }
+    }
     else if (act === 'econ-toggle') {
       const on = !(S.cfg.econ && S.cfg.econ.on);
       if (on && !confirm('Ligar a economia no servidor? Confirme que a função game já foi publicada.')) return;
