@@ -322,7 +322,7 @@ function econHTML() {
     + (L.length ? '<table><thead><tr><th>Quando</th><th>Conta</th><th>Situação</th><th>Motivo</th><th>Bot</th><th>Jogadas</th></tr></thead><tbody>'
       + L.map((m) => '<tr><td>' + dt(m.created_at) + '</td><td>' + esc(m.email) + '</td><td>' + (m.status === 'refused' ? '<span class="pill p-bad">Recusada</span>' : '<span class="pill">Abandonada</span>') + '</td><td>' + why(m) + '</td><td>' + m.bot + '</td><td>' + nf(m.moves) + ' <button class="btn sm" data-act="rp-open" data-v="' + m.id + '">Replay</button></td></tr>').join('') + '</tbody></table>'
       : '<p class="muted">Nenhuma.</p>')
-    + '<p class="muted">Recusada: o diário de jogadas tinha algo que o jogo não permite (por exemplo, usar uma habilidade sem Essência). Ela conta como derrota, sem recompensa. Muitas recusadas da mesma conta indicam tentativa de trapaça.</p></div>';
+    + '<p class="muted">Recusada: o diário de jogadas tinha algo que o jogo não permite (por exemplo, usar uma habilidade sem Essência). Desde a Beta 0.86 ela é anulada: sem recompensa, sem derrota e sem mudar o ranking. Muitas recusadas da mesma conta indicam tentativa de trapaça.</p></div>';
 }
 
 /* ---------- REPLAY (o servidor refaz a partida e devolve um quadro por duelo) ---------- */
