@@ -510,11 +510,11 @@ function versionsHTML() {
       : '<tr><td colspan="6" class="muted">Nenhuma versão recebida ainda. Elas chegam depois que a chave secreta estiver no GitHub (veja o guia) e um APK novo for montado.</td></tr>')
     + '</tbody></table></div>'
     + '<div class="row" style="margin-top:12px"><label class="chk"><input type="checkbox" id="rl-back"' + (r.rollback ? ' checked' : '') + '> Voltar versão (também para quem tem APK mais novo)</label>' + (r.bundle ? '<button class="btn sm" data-act="rel-use" data-v="0">Tirar do ar (cada APK usa a sua)</button>' : '') + '</div></div>'
-    + '<div class="card sec"><h2>APK novo obrigatório</h2><p class="muted" style="margin-top:-4px">A cada APK montado no GitHub, ele é publicado nas Releases deste site (link fixo abaixo) e vira o mínimo: quem estiver com um APK mais antigo vê “Atualize o jogo” ao abrir o app. Com o link da Play Store preenchido, isso para de ser automático.</p>'
+    + '<div class="card sec"><h2>Atualização automática</h2><p class="muted" style="margin-top:-4px">A cada montagem no GitHub, a versão nova do jogo entra no ar sozinha e chega a todos os apps ao abrir, sem instalar APK. Um APK novo só é exigido quando a parte nativa do app muda (NATIVE_VERSION) ou quando a versão do jogo não chegou ao servidor. O APK fica nas Releases deste site, sempre no mesmo link.</p>'
     + '<p>APK mais novo: <b>' + (r.latest_build || '—') + '</b> · mínimo exigido agora: <b>' + (r.min_build || '—') + '</b></p>'
-    + '<div class="row"><label class="chk"><input type="checkbox" id="rl-auto"' + (r.auto_force === false ? '' : ' checked') + '> Exigir sempre o APK mais novo</label>'
+    + '<div class="row"><label class="chk"><input type="checkbox" id="rl-auto"' + (r.auto_force === false ? '' : ' checked') + '> Exigir APK novo quando ele for necessário</label><label class="chk"><input type="checkbox" id="rl-ota"' + (r.auto_ota === false ? '' : ' checked') + '> Colocar cada versão nova do jogo no ar sozinha</label>'
     + (r.min_build ? '<button class="btn sm" data-act="rel-unforce">Liberar quem está no APK antigo</button>' : '') + '</div></div>'
-    + '<div class="card sec"><h2>App (APK / Play Store)</h2><p class="muted" style="margin-top:-4px">Use quando sair um APK com mudança “nativa” (ícone, permissões, plugins). O número do app é o <b>NATIVE_VERSION</b>; hoje é 2.</p><div class="form">'
+    + '<div class="card sec"><h2>App (APK / Play Store)</h2><p class="muted" style="margin-top:-4px">Use quando sair um APK com mudança “nativa” (ícone, permissões, plugins). O número do app é o <b>NATIVE_VERSION</b>; hoje é 1.</p><div class="form">'
     + '<label class="f">Versão mínima obrigatória<input type="number" id="rl-min" min="0" value="' + (r.min_native || 0) + '"></label>'
     + '<label class="f">Versão mais nova disponível<input type="number" id="rl-latest" min="0" value="' + (r.latest_native || 0) + '"></label>'
     + '<label class="f wide">Link da Play Store<input type="url" id="rl-store" placeholder="https://play.google.com/store/apps/details?id=br.factionduels.app" value="' + esc(r.store_url || '') + '"></label>'
@@ -644,11 +644,11 @@ document.addEventListener('click', async (e) => {
       if (+v && !confirm('Colocar a versão ' + v + ' no ar? Os jogadores recebem ao abrir o app.')) return;
       if (await saveCfg('release', r)) { toast(+v ? 'Versão ' + v + ' no ar.' : 'Cada APK volta a usar a própria versão.'); render(); }
     } else if (act === 'rel-unforce') {
-      if (!confirm('Liberar quem está com um APK antigo? Eles voltam a jogar sem atualizar (até o próximo APK, se “Exigir sempre” estiver marcado).')) return;
+      if (!confirm('Liberar quem está com um APK antigo? Eles voltam a jogar sem instalar o APK novo.')) return;
       const r = Object.assign({}, S.cfg.release || {}, { min_build: 0 });
       if (await saveCfg('release', r)) { toast('Liberado.'); render(); }
     } else if (act === 'rel-save') {
-      const r = Object.assign({}, S.cfg.release || {}, { min_native: Math.max(0, +val('rl-min') || 0), latest_native: Math.max(0, +val('rl-latest') || 0), store_url: val('rl-store'), apk_url: val('rl-apk'), message: val('rl-msg'), rollback: checked('rl-back'), auto_force: checked('rl-auto') });
+      const r = Object.assign({}, S.cfg.release || {}, { min_native: Math.max(0, +val('rl-min') || 0), latest_native: Math.max(0, +val('rl-latest') || 0), store_url: val('rl-store'), apk_url: val('rl-apk'), message: val('rl-msg'), rollback: checked('rl-back'), auto_force: checked('rl-auto'), auto_ota: checked('rl-ota') });
       if (r.min_native > 1 && !r.store_url && !r.apk_url && !confirm('Sem link, quem estiver abaixo da versão mínima fica travado sem saber onde atualizar. Salvar assim mesmo?')) return;
       if (await saveCfg('release', r)) { toast('Salvo.'); render(); }
     }
