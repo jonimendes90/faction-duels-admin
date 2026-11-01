@@ -471,6 +471,8 @@ async function loadMail() {
 function rewardTxt(r) {
   const out = [];
   if (r.gold) out.push(nf(r.gold) + ' ouro'); if (r.dust) out.push(nf(r.dust) + ' fragmentos'); if (r.packs) out.push(r.packs + ' pacote(s)');
+  if (r.gems) out.push(nf(r.gems) + ' gemas'); if (r.fpacks) out.push(r.fpacks + ' pacote(s) de facção'); if (r.cmdPacks) out.push(r.cmdPacks + ' pacote(s) de Comandante'); if (r.eqPacks) out.push(r.eqPacks + ' pacote(s) de equipamentos');
+  (r.cos || []).forEach((id) => out.push(id));
   (r.cards || []).forEach((id) => out.push((cardBy(id) || {}).nome || id)); (r.cmds || []).forEach((id) => out.push('Cmd. ' + ((cmdBy(id) || {}).nome || id))); (r.eqs || []).forEach((id) => out.push((eqBy(id) || {}).nome || id));
   return out.join(' · ') || '—';
 }
@@ -490,7 +492,11 @@ function mailHTML() {
     + '<label class="f wide">Mensagem (opcional)<textarea id="ml-body" maxlength="1000" style="min-height:70px"></textarea></label>'
     + '<label class="f">Ouro<input type="number" id="ml-gold" min="0" max="100000" value="0"></label>'
     + '<label class="f">Fragmentos<input type="number" id="ml-dust" min="0" max="100000" value="0"></label>'
-    + '<label class="f">Pacotes de cartas grátis<input type="number" id="ml-packs" min="0" max="50" value="0"></label>'
+    + '<label class="f">Pacotes de cartas<input type="number" id="ml-packs" min="0" max="50" value="0"></label>'
+    + '<label class="f">Gemas<input type="number" id="ml-gems" min="0" max="100000" value="0"></label>'
+    + '<label class="f">Pacotes de facção<input type="number" id="ml-fpacks" min="0" max="50" value="0"></label>'
+    + '<label class="f">Pacotes de Comandante<input type="number" id="ml-cpacks" min="0" max="50" value="0"></label>'
+    + '<label class="f">Pacotes de equipamentos<input type="number" id="ml-epacks" min="0" max="50" value="0"></label>'
     + '<label class="f">Expira em (opcional)<input type="datetime-local" id="ml-exp"></label>'
     + pickerHTML('cards', 'Cartas', S.cat.cards) + pickerHTML('cmds', 'Comandantes', S.cat.cmds.filter((c) => c.rar !== 'Comum')) + pickerHTML('eqs', 'Equipamentos', S.cat.eqs.filter((c) => c.rar !== 'Comum'))
     + '</div><p class="muted">Carta, Comandante ou equipamento que o jogador já tem vira fragmentos.</p><div class="row"><button class="btn go" data-act="mail-send">Enviar prêmio</button></div></div>'
@@ -628,6 +634,8 @@ document.addEventListener('click', async (e) => {
       const n = (id, max) => Math.max(0, Math.min(max, Math.round(+val(id) || 0)));
       const reward = {}; const g = n('ml-gold', 100000), d = n('ml-dust', 100000), p = n('ml-packs', 50);
       if (g) reward.gold = g; if (d) reward.dust = d; if (p) reward.packs = p;
+      const gm = n('ml-gems', 100000), fp = n('ml-fpacks', 50), cp = n('ml-cpacks', 50), ep = n('ml-epacks', 50);
+      if (gm) reward.gems = gm; if (fp) reward.fpacks = fp; if (cp) reward.cmdPacks = cp; if (ep) reward.eqPacks = ep;
       ['cards', 'cmds', 'eqs'].forEach((k) => { if (S.picks[k].length) reward[k] = S.picks[k].slice(); });
       const row = { title: val('ml-title'), body: (document.getElementById('ml-body') || {}).value || '', reward, expires_at: fromInput(val('ml-exp')) };
       if (!row.title) return toast('Dê um título ao prêmio.', true);
