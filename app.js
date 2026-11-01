@@ -514,13 +514,12 @@ function versionsHTML() {
     + '<p>APK mais novo: <b>' + (r.latest_build || '—') + '</b> · mínimo exigido agora: <b>' + (r.min_build || '—') + '</b></p>'
     + '<div class="row"><label class="chk"><input type="checkbox" id="rl-auto"' + (r.auto_force === false ? '' : ' checked') + '> Exigir APK novo quando ele for necessário</label><label class="chk"><input type="checkbox" id="rl-ota"' + (r.auto_ota === false ? '' : ' checked') + '> Colocar cada versão nova do jogo no ar sozinha</label>'
     + (r.min_build ? '<button class="btn sm" data-act="rel-unforce">Liberar quem está no APK antigo</button>' : '') + '</div></div>'
-    + '<div class="card sec"><h2>App (APK / Play Store)</h2><p class="muted" style="margin-top:-4px">Use quando sair um APK com mudança “nativa” (ícone, permissões, plugins). O número do app é o <b>NATIVE_VERSION</b>; hoje é 1.</p><div class="form">'
-    + '<label class="f">Versão mínima obrigatória<input type="number" id="rl-min" min="0" value="' + (r.min_native || 0) + '"></label>'
-    + '<label class="f">Versão mais nova disponível<input type="number" id="rl-latest" min="0" value="' + (r.latest_native || 0) + '"></label>'
+    + '<div class="card sec"><h2>App (APK / Play Store)</h2><p class="muted" style="margin-top:-4px">Para obrigar todos a instalar um APK, coloque aqui o número dele (o mesmo de “APK mais novo” acima e de “Faction Duels (versão N)” nas Releases). Quem tem um APK com número menor vê a tela “Atualize o jogo”. 0 = ninguém é obrigado.</p><div class="form">'
+    + '<label class="f">APK mínimo obrigatório (número)<input type="number" id="rl-min" min="0" max="' + (r.latest_build || 0) + '" value="' + (r.min_build || 0) + '"></label>'
     + '<label class="f wide">Link da Play Store<input type="url" id="rl-store" placeholder="https://play.google.com/store/apps/details?id=br.factionduels.app" value="' + esc(r.store_url || '') + '"></label>'
     + '<label class="f wide">Link do APK (enquanto não estiver na Play Store)<input type="url" id="rl-apk" value="' + esc(r.apk_url || '') + '"></label>'
     + '<label class="f wide">Mensagem para quem precisa atualizar (opcional)<input type="text" id="rl-msg" maxlength="200" value="' + esc(r.message || '') + '"></label>'
-    + '</div><p class="muted">Abaixo da mínima: o jogo trava numa tela “Atualize o jogo”. Abaixo da mais nova: só aparece um aviso no menu.</p><button class="btn go" data-act="rel-save">Salvar</button></div>';
+    + '</div><button class="btn go" data-act="rel-save">Salvar</button></div>';
 }
 
 /* ---------- JOGADOR ---------- */
@@ -648,8 +647,11 @@ document.addEventListener('click', async (e) => {
       const r = Object.assign({}, S.cfg.release || {}, { min_build: 0 });
       if (await saveCfg('release', r)) { toast('Liberado.'); render(); }
     } else if (act === 'rel-save') {
-      const r = Object.assign({}, S.cfg.release || {}, { min_native: Math.max(0, +val('rl-min') || 0), latest_native: Math.max(0, +val('rl-latest') || 0), store_url: val('rl-store'), apk_url: val('rl-apk'), message: val('rl-msg'), rollback: checked('rl-back'), auto_force: checked('rl-auto'), auto_ota: checked('rl-ota') });
-      if (r.min_native > 1 && !r.store_url && !r.apk_url && !confirm('Sem link, quem estiver abaixo da versão mínima fica travado sem saber onde atualizar. Salvar assim mesmo?')) return;
+      // the number is the APK's build (min_build); the app's native version (min_native) stays with the APK workflow
+      const cur = S.cfg.release || {}, minb = Math.max(0, Math.floor(+val('rl-min') || 0));
+      if (minb > (+cur.latest_build || 0)) { toast('Não existe APK ' + minb + ': o mais novo é o ' + (cur.latest_build || '—') + '. Com esse número ninguém conseguiria jogar.', true); return; }
+      const r = Object.assign({}, cur, { min_build: minb, store_url: val('rl-store'), apk_url: val('rl-apk'), message: val('rl-msg'), rollback: checked('rl-back'), auto_force: checked('rl-auto'), auto_ota: checked('rl-ota') });
+      if (minb && !r.store_url && !r.apk_url && !confirm('Sem link, quem estiver com APK antigo fica travado sem saber onde atualizar. Salvar assim mesmo?')) return;
       if (await saveCfg('release', r)) { toast('Salvo.'); render(); }
     }
   } catch (err) { fail(err); }
