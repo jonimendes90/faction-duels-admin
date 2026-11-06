@@ -531,11 +531,89 @@ function versionsHTML() {
 /* ---------- JOGADOR ---------- */
 function playerHTML() {
   const u = S.player;
-  return '<h1>Jogador</h1><p class="sub">Procure uma conta pelo e-mail para ver nível, ouro e partidas (útil para suporte e compensações individuais).</p>'
+  return '<h1>Jogador</h1><p class="sub">Procure uma conta pelo e-mail para ver nível, saldos, partidas e o registro de tudo que ela ganhou e gastou.</p>'
     + '<div class="card"><div class="row"><input type="email" id="pl-email" placeholder="email@exemplo.com" style="flex:1;max-width:420px" value="' + esc(u && u.email || '') + '"><button class="btn go" data-act="pl-find">Procurar</button></div>'
     + (u === null ? '<p class="muted">Nenhuma conta com esse e-mail.</p>' : u ? '<div class="grid g4 sec">'
-      + [['Conta criada', dt(u.created_at)], ['Último login', dt(u.last_sign_in_at)], ['Nível', u.level == null ? '—' : u.level], ['Ouro', nf(u.gold)], ['Fragmentos', nf(u.dust)], ['Pacotes grátis', nf(u.packs)], ['Partidas', nf(u.matches)], ['Vitórias', nf(u.wins) + ' (' + pctTxt(pct(u.wins, u.matches)) + ')'], ['Última partida', dt(u.last_match)]]
-        .map(([k, v]) => '<div class="card kpi"><small>' + k + '</small><b style="font-size:18px">' + v + '</b></div>').join('') + '</div><div class="row sec"><button class="btn" data-act="pl-mail">Mandar prêmio para este jogador</button></div>' : '') + '</div>';
+      + [['Conta criada', dt(u.created_at)], ['Último login', dt(u.last_sign_in_at)], ['Nível', u.level == null ? '—' : u.level], ['Ouro', nf(u.gold)], ['Gemas', nf(u.gems)], ['Fragmentos', nf(u.dust)], ['Pacotes grátis', nf(u.packs)], ['Partidas', nf(u.matches)], ['Vitórias', nf(u.wins) + ' (' + pctTxt(pct(u.wins, u.matches)) + ')'], ['Última partida', dt(u.last_match)]]
+        .map(([k, v]) => '<div class="card kpi"><small>' + k + '</small><b style="font-size:18px">' + v + '</b></div>').join('') + '</div>'
+      + (u.src === 'celular' ? '<p class="muted">Saldos do salvo antigo do celular (esta conta ainda não tem progresso no servidor).</p>' : '')
+      + '<div class="row sec"><button class="btn" data-act="pl-mail">Mandar prêmio para este jogador</button></div>' : '') + '</div>'
+    + (u ? plogHTML() : '');
+}
+
+/* ---------- registro de economia (Beta 1.46): o que a conta ganhou e gastou, com o saldo antes e depois ---------- */
+const PLOG_OPS = {
+  buy: 'Comprou pacote', open: 'Abriu pacote guardado', buyOpen: 'Comprou e abriu pacote', buyOpen10: 'Comprou 10 pacotes',
+  craft: 'Criou carta', craftEq: 'Criou equipamento', soulBuy: 'Comprou fragmentos de alma', cardUp: 'Evoluiu carta', cardReset: 'Desfez evolução',
+  storeBuy: 'Comprou na loja (ofertas)', cosBuy: 'Comprou cosmético', goldBag: 'Comprou ouro com gemas', iapVerify: 'Compra com dinheiro real',
+  mail: 'Resgatou prêmio da caixa', inbox: 'Resgatou prêmio do jogo', evClaim: 'Prêmio de evento/desafio', claimMission: 'Prêmio de missão',
+  claimLevel: 'Prêmio de nível', claimLevels: 'Prêmios de nível', trPick: 'Prêmio da Trilha', ftFree: 'Prêmio grátis', start: 'Começou o jogo',
+  mAct: 'Partida (pagamento)', matchEnd: 'Partida (pagamento)', mFind: 'Partida', mPoll: 'Partida', state: 'Virada do dia/semana'
+};
+const PLOG_CUR = [['gold', 'Ouro'], ['gems', 'Gemas'], ['dust', 'Fragmentos'], ['soul', 'Alma']];
+const PLOG_PK = { packs: 'pacote', bpacks: 'pacote do banner', fpacks: 'pacote de facção', cmdPacks: 'pacote de Comandante', eqPacks: 'pacote de equipamentos' };
+const plogKeep = (r) => {
+  const f = S.plogF || 'all', d = r.delta || {};
+  if (f === 'all') return true;
+  if (f === 'real') return !!(r.what && r.what.real);
+  if (f === 'spend') return Object.keys(d).some((k) => d[k][1] < d[k][0]);
+  return !!d[f];
+};
+function plogDetail(r) {
+  const w = r.what || {}, it = r.items || {}, a = w.a || {}, out = [];
+  if (w.real) out.push('<b>Play Store</b> · ' + esc(w.real.product || '') + (w.real.order ? ' · pedido ' + esc(w.real.order) : '') + ' · +' + nf(w.real.gems) + ' gemas');
+  if (a.kind) out.push(esc({ pack: 'normal', fac: 'de facção', banner: 'do banner', cmd: 'de Comandante', eq: 'de equipamentos' }[a.kind] || a.kind) + (a.fac ? ' · ' + esc(FAC[a.fac] || a.fac) : ''));
+  if (r.op === 'storeBuy') out.push('pago com ' + (a.cur === 'gems' ? 'gemas' : 'ouro'));
+  if (r.op === 'craft' && a.id) out.push(esc((cardBy(a.id) || { nome: a.id }).nome));
+  if (r.op === 'craftEq' && a.id) out.push(esc((eqBy(a.id) || { nome: a.id }).nome));
+  if (w.match) w.match.forEach((m) => { const x = m.result || {}; out.push((m.status === 'done' ? (x.sign === 1 ? 'Vitória' : x.sign === -1 ? 'Derrota' : 'Empate') : esc(m.status)) + (x.gold ? ' · +' + nf(x.gold) + ' ouro' : '') + (x.xp ? ' · +' + nf(x.xp) + ' XP' : '')); });
+  if (w.mail != null) out.push('prêmio #' + esc(w.mail));
+  const names = (ids, by) => ids.map((id) => esc((by(id) || { nome: id }).nome)).join(', ');
+  if (it.cards) out.push('<b>Cartas novas:</b> ' + names(it.cards, cardBy));
+  if (it.cmds) out.push('<b>Comandantes:</b> ' + names(it.cmds, cmdBy));
+  if (it.eqs) out.push('<b>Equipamentos:</b> ' + names(it.eqs, eqBy));
+  if (it.cos) out.push('<b>Cosméticos:</b> ' + it.cos.map(esc).join(', '));
+  if (Array.isArray(w.out) && w.out.length && w.out[0] && w.out[0].id) {
+    const dup = w.out.filter((c) => c && c.isNew === false).length;
+    if (dup) out.push(dup + ' repetida' + (dup > 1 ? 's' : '') + ' (viraram fragmentos/alma)');
+  }
+  if (w.nova) out.push('conta nova no servidor');
+  return out.join('<br>') || '<span class="muted">—</span>';
+}
+function plogCell(d) {
+  if (!d) return '<td></td>';
+  const x = d[1] - d[0];
+  return '<td class="num"><b style="color:' + (x < 0 ? 'var(--bad)' : 'var(--good, #63d68a)') + '">' + (x > 0 ? '+' : '−') + nf(Math.abs(x)) + '</b><br><small class="muted">' + nf(d[0]) + ' → ' + nf(d[1]) + '</small></td>';
+}
+function plogHTML() {
+  const L = S.plog;
+  if (!L) return '<div class="card sec"><h2>Registro de economia</h2><p class="muted">Carregando…</p></div>';
+  const rows = L.filter(plogKeep);
+  const tot = {}; rows.forEach((r) => Object.keys(r.delta || {}).forEach((k) => { const x = r.delta[k][1] - r.delta[k][0]; tot[k] = tot[k] || { in: 0, out: 0 }; if (x > 0) tot[k].in += x; else tot[k].out -= x; }));
+  const real = rows.filter((r) => r.what && r.what.real).length;
+  const F = [['all', 'Tudo'], ['spend', 'Só gastos'], ['gold', 'Ouro'], ['gems', 'Gemas'], ['dust', 'Fragmentos'], ['soul', 'Alma'], ['real', 'Dinheiro real']];
+  return '<div class="card sec"><h2>Registro de economia</h2>'
+    + '<p class="muted" style="margin-top:0">Cada linha é uma operação que mudou o que a conta tem, com o saldo antes → depois. O registro começa na Beta 1.46 (antes dela não há histórico guardado).</p>'
+    + '<div class="row">' + F.map(([k, t]) => '<button class="btn' + ((S.plogF || 'all') === k ? ' go' : '') + '" data-act="plog-f" data-v="' + k + '">' + t + '</button>').join('') + '</div>'
+    + '<div class="grid g4 sec">' + PLOG_CUR.map(([k, t]) => '<div class="card kpi"><small>' + t + ' nesta lista</small><b style="font-size:16px">+' + nf((tot[k] || {}).in || 0) + ' / −' + nf((tot[k] || {}).out || 0) + '</b></div>').join('')
+    + '<div class="card kpi"><small>Compras com dinheiro real</small><b style="font-size:16px">' + nf(real) + '</b></div></div>'
+    + '<div class="tbl-wrap sec"><table><thead><tr><th>Quando</th><th>O que</th><th>Detalhe</th>' + PLOG_CUR.map(([, t]) => '<th class="num">' + t + '</th>').join('') + '<th>Pacotes</th></tr></thead><tbody>'
+    + (rows.length ? rows.map((r) => {
+      const d = r.delta || {};
+      const pk = Object.keys(PLOG_PK).filter((k) => d[k]).map((k) => { const x = d[k][1] - d[k][0]; return (x > 0 ? '+' : '−') + Math.abs(x) + ' ' + PLOG_PK[k] + ' <small class="muted">(' + d[k][0] + ' → ' + d[k][1] + ')</small>'; }).join('<br>');
+      return '<tr><td style="white-space:nowrap">' + dt(r.at) + '</td><td>' + esc(PLOG_OPS[r.op] || r.op) + '</td><td style="max-width:420px">' + plogDetail(r) + '</td>' + PLOG_CUR.map(([k]) => plogCell(d[k])).join('') + '<td>' + pk + '</td></tr>';
+    }).join('') : '<tr><td colspan="9" class="muted">Nada registrado' + ((S.plogF || 'all') !== 'all' ? ' com este filtro' : '') + '.</td></tr>')
+    + '</tbody></table></div>'
+    + (S.plogMore ? '<div class="row sec"><button class="btn" data-act="plog-more">Carregar mais antigos</button></div>' : '')
+    + '</div>';
+}
+async function loadPlog(more) {
+  const u = S.player; if (!u) return;
+  const before = more && S.plog && S.plog.length ? S.plog[S.plog.length - 1].at : null;
+  const { data, error } = await sb.rpc('admin_econ_log', { p_email: u.email, p_limit: 300, p_before: before });
+  if (error) throw error;
+  const list = data || [];
+  S.plog = more ? (S.plog || []).concat(list) : list; S.plogMore = list.length === 300;
 }
 
 /* ---------- actions ---------- */
@@ -621,9 +699,12 @@ document.addEventListener('click', async (e) => {
     else if (act === 'mail-find' || act === 'pl-find') {
       const email = val(act === 'mail-find' ? 'ml-email' : 'pl-email'); if (!email) return;
       const { data, error } = await sb.rpc('admin_find_user', { p_email: email }); if (error) return fail(error);
-      if (act === 'mail-find') { S.mailUser = data; if (!data) toast('Nenhuma conta com esse e-mail.', true); } else S.player = data;
+      if (act === 'mail-find') { S.mailUser = data; if (!data) toast('Nenhuma conta com esse e-mail.', true); } else { S.player = data; S.plog = null; S.plogF = 'all'; }
       render();
-    } else if (act === 'pl-mail') { S.mailTo = 'one'; S.mailUser = S.player; go('mail'); }
+      if (act === 'pl-find' && data) { await loadPlog(false); render(); }
+    } else if (act === 'plog-f') { S.plogF = v; render(); }
+    else if (act === 'plog-more') { await loadPlog(true); render(); }
+    else if (act === 'pl-mail') { S.mailTo = 'one'; S.mailUser = S.player; go('mail'); }
     else if (act === 'pick-add') {
       const items = v === 'cards' ? S.cat.cards : v === 'cmds' ? S.cat.cmds : S.cat.eqs, name = val('pk-' + v).toLowerCase();
       const x = items.find((y) => y.nome.toLowerCase() === name) || items.find((y) => y.nome.toLowerCase().includes(name));
