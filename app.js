@@ -239,6 +239,102 @@ function botsHTML() {
   return head + tiers + table;
 }
 
+/* ---------- EDITOR VISUAL (notícias, prêmios e avisos de buff/nerf) ----------
+   O texto vai para o jogo como '<!--rich-->' + HTML. O jogo só aceita negrito, itálico, sublinhado, cor, tamanho,
+   alinhamento, títulos, listas e imagens (https ou imagem embutida); o resto vira texto. A prévia usa a mesma limpeza. */
+const RICH = '<!--rich-->', BALN = '<!--bal-->';
+const R_TAGS = { P: 'p', DIV: 'div', BR: 'br', B: 'b', STRONG: 'b', I: 'i', EM: 'i', U: 'u', SPAN: 'span', FONT: 'span', H3: 'h3', UL: 'ul', OL: 'ol', LI: 'li', IMG: 'img' };
+const R_FSZ = { 1: 11, 2: 13, 3: 15, 4: 18, 5: 22, 6: 26, 7: 30 };
+const R_COL = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i;
+function richClean(html) {
+  const doc = new DOMParser().parseFromString('<body>' + String(html || '') + '</body>', 'text/html');
+  const walk = (n) => {
+    if (n.nodeType === 3) return esc(n.nodeValue);
+    if (n.nodeType !== 1) return '';
+    if (/^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT|IFRAME|OBJECT)$/.test(n.tagName)) return '';
+    const t = R_TAGS[n.tagName], kids = Array.from(n.childNodes).map(walk).join('');
+    if (!t) return kids;
+    if (t === 'br') return '<br>';
+    const st = [], sty = n.style || {};
+    const col = (sty.color || n.getAttribute('color') || '').trim();
+    if (col && R_COL.test(col)) st.push('color:' + col);
+    let fs = sty.fontSize; const fz = n.getAttribute('size');
+    if (n.tagName === 'FONT' && R_FSZ[fz]) fs = R_FSZ[fz] + 'px';
+    if (fs && /^\d+(\.\d+)?px$/.test(fs)) st.push('font-size:' + Math.max(10, Math.min(34, parseFloat(fs))) + 'px');
+    const al = sty.textAlign || n.getAttribute('align');
+    if (al && /^(left|center|right|justify)$/.test(al) && /^(p|div|h3|li)$/.test(t)) st.push('text-align:' + al);
+    if (t === 'img') {
+      const src = n.getAttribute('src') || '';
+      if (!/^https:\/\/[^\s"'<>]+$/i.test(src) && !/^data:image\/(png|jpe?g|webp|gif);base64,[a-z0-9+/=]+$/i.test(src)) return '';
+      const w = parseFloat(sty.width), ww = sty.width && /%$/.test(sty.width) && w > 0 ? Math.min(100, w) : 100;
+      return '<img src="' + esc(src) + '" alt="" style="width:' + ww + '%">';
+    }
+    return '<' + t + (st.length ? ' style="' + st.join(';') + '"' : '') + '>' + kids + '</' + t + '>';
+  };
+  return Array.from(doc.body.childNodes).map(walk).join('').trim();
+}
+const richText = (html) => { const d = document.createElement('div'); d.innerHTML = richClean(html); return d.textContent.trim(); };
+const richHasContent = (html) => !!richText(html) || /<img /.test(richClean(html));
+// a body from the database -> HTML for the editor (old plain bodies become paragraphs)
+const richFrom = (body) => { body = String(body || ''); if (body.startsWith(RICH)) return body.slice(RICH.length); return esc(body).split(/\n{2,}/).filter(Boolean).map((p) => '<p>' + p.replace(/\n/g, '<br>') + '</p>').join(''); };
+const richTo = (html) => { const c = richClean(html); return c ? RICH + c : ''; };
+S.rich = {};
+const richGet = (k, def) => (k in S.rich ? S.rich[k] : (S.rich[k] = def || ''));
+function richBox(k, def, o) {
+  o = o || {};
+  const html = richGet(k, def);
+  const b = (cmd, label, title) => '<button type="button" class="rt-b" data-rt="' + cmd + '" data-rk="' + k + '" title="' + title + '">' + label + '</button>';
+  return '<div class="rich' + (o.small ? ' sm' : '') + '"><div class="rt-bar">'
+    + b('bold', '<b>N</b>', 'Negrito') + b('italic', '<i>I</i>', 'Itálico') + b('underline', '<u>S</u>', 'Sublinhado')
+    + '<label class="rt-col" title="Cor do texto">A<input type="color" data-rtcol="' + k + '" value="#f2c45a"></label>'
+    + '<select data-rtsize="' + k + '" title="Tamanho"><option value="">Tamanho</option><option value="2">Pequeno</option><option value="3">Normal</option><option value="4">Médio</option><option value="5">Grande</option><option value="6">Enorme</option></select>'
+    + b('justifyLeft', '⇤', 'Alinhar à esquerda') + b('justifyCenter', '↔', 'Centralizar') + b('justifyRight', '⇥', 'Alinhar à direita')
+    + b('h3', 'T', 'Título') + b('ul', '•', 'Lista') + b('img', '🖼', 'Imagem (link ou arquivo)') + b('clear', '⌫', 'Limpar formatação')
+    + '</div><div class="rt-ed" contenteditable="true" data-rk="' + k + '" data-ph="' + esc(o.ph || 'Escreva aqui…') + '">' + richClean(html) + '</div>'
+    + (o.preview === false ? '' : '<div class="rt-pv"><small>Prévia no jogo</small><div class="pv-sheet" data-rpv="' + k + '">' + richPreview(k) + '</div></div>')
+    + '</div>';
+}
+function richPreview(k) { const h = richClean(S.rich[k] || ''); return h ? '<div class="pv-rich">' + h + '</div>' : '<p class="muted">Nada escrito ainda.</p>'; }
+function richSync(k) { const ed = document.querySelector('.rt-ed[data-rk="' + k + '"]'); if (ed) S.rich[k] = ed.innerHTML; const pv = document.querySelector('[data-rpv="' + k + '"]'); if (pv) pv.innerHTML = richPreview(k); if (S.balPv) balPreviewSync(); }
+// pictures: uploaded to the game's storage when the account may write there; otherwise embedded (shrunk to 720 px)
+async function richImgFile(file) {
+  const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg'), path = 'news/' + Date.now() + '-' + Math.random().toString(36).slice(2, 7) + '.' + ext;
+  try { const { error } = await sb.storage.from('game').upload(path, file, { contentType: file.type, upsert: false }); if (!error) return STORE + path; } catch (err) {}
+  const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = URL.createObjectURL(file); });
+  const sc = Math.min(1, 720 / img.width), c = document.createElement('canvas'); c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  toast('Imagem embutida no texto (o site não tem permissão de enviar arquivos ao servidor).');
+  return c.toDataURL('image/webp', 0.78);
+}
+// the last selection inside each editor, so the colour picker and the size list (which take the focus) still apply to it
+const R_SEL = {};
+document.addEventListener('selectionchange', () => { const sel = window.getSelection(); if (!sel.rangeCount) return; const n = sel.anchorNode, ed = n && (n.nodeType === 1 ? n : n.parentElement).closest('.rt-ed'); if (ed) R_SEL[ed.dataset.rk] = sel.getRangeAt(0).cloneRange(); });
+function richFocus(k) {
+  const ed = document.querySelector('.rt-ed[data-rk="' + k + '"]'); if (!ed) return null;
+  ed.focus(); const r = R_SEL[k];
+  if (r && ed.contains(r.startContainer)) { const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+  return ed;
+}
+async function richCmd(k, cmd) {
+  const ed = richFocus(k); if (!ed) return;
+  if (cmd === 'h3') document.execCommand('formatBlock', false, 'h3');
+  else if (cmd === 'ul') document.execCommand('insertUnorderedList');
+  else if (cmd === 'clear') { document.execCommand('removeFormat'); document.execCommand('formatBlock', false, 'p'); }
+  else if (cmd === 'img') {
+    const sel = window.getSelection(), rng = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    const url = prompt('Link da imagem (https://…). Deixe em branco para escolher um arquivo do computador.');
+    if (url === null) return;
+    let src = url.trim();
+    if (!src) {
+      const f = await new Promise((ok) => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.onchange = () => ok(i.files[0] || null); i.click(); });
+      if (!f) return; src = await richImgFile(f);
+    } else if (!/^https:\/\//i.test(src)) { toast('O link precisa começar com https://', true); return; }
+    ed.focus(); if (rng) { sel.removeAllRanges(); sel.addRange(rng); }
+    document.execCommand('insertHTML', false, '<img src="' + esc(src) + '" style="width:100%">');
+  } else document.execCommand(cmd);
+  richSync(k);
+}
+
 /* ---------- CARTAS (buffs e nerfs) ---------- */
 function cardsHTML() {
   const A = S.cat.attrs || ['FOR', 'DEF', 'VEL', 'ENE', 'TEC', 'INT'];
@@ -250,6 +346,7 @@ function cardsHTML() {
     + '<div class="row" style="margin-bottom:14px"><input type="text" id="card-q" placeholder="Buscar carta…" value="' + esc(S.cardQ) + '" data-act="card-q"><select id="card-fac" data-act="card-fac"><option value="">Todas as facções</option>' + Object.keys(FAC).map((f) => '<option value="' + f + '"' + (S.cardFac === f ? ' selected' : '') + '>' + FAC[f] + '</option>').join('') + '</select>'
     + '<span class="pill ' + (changed ? 'p-gold' : 'p-muted') + '">' + changed + ' carta' + (changed === 1 ? '' : 's') + ' ajustada' + (changed === 1 ? '' : 's') + '</span>'
     + '<button class="btn go" data-act="save-bal"' + (saved ? ' disabled' : '') + '>' + (saved ? 'Tudo salvo' : 'Salvar e publicar ajustes') + '</button></div>'
+    + (saved ? '' : balNoteHTML())
     + '<div class="card"><div class="tbl-wrap"><table><thead><tr><th>Carta</th><th>Facção</th><th>Raridade</th>' + A.map((a) => '<th class="num">' + a + '</th>').join('') + '<th class="num">Total</th><th>Habilidade · custo</th><th></th></tr></thead><tbody>'
     + list.map((c) => {
       const o = S.bal[c.id] || {}, s = o.s || c.s;
@@ -260,6 +357,60 @@ function cardsHTML() {
         + '<td>' + (c.act ? esc(c.act.nome) + ' · <input type="number" min="0" max="5" class="stat-in' + (o.cost != null && o.cost !== c.act.cost ? ' chg' : '') + '" data-act="cost" data-id="' + c.id + '" value="' + (o.cost != null ? o.cost : c.act.cost) + '" title="Original: ' + c.act.cost + '"> Ess.' : '<span class="muted">—</span>') + '</td>'
         + '<td>' + (S.bal[c.id] ? '<button class="btn sm" data-act="bal-reset" data-v="' + c.id + '">Voltar ao original</button>' : '') + '</td></tr>';
     }).join('') + '</tbody></table></div></div>';
+}
+/* what changed against what is published now: one line per card, with the explanation the players will read */
+function balDiff() {
+  const pub = (S.cfg.balance && S.cfg.balance.cards) || {}, ids = Array.from(new Set(Object.keys(pub).concat(Object.keys(S.bal))));
+  return ids.map((id) => {
+    const c = cardBy(id); if (!c) return null;
+    const P = pub[id] || {}, N = S.bal[id] || {};
+    const before = { s: (P.s || c.s).map(Number), cost: c.act ? (P.cost != null ? +P.cost : c.act.cost) : null };
+    const after = { s: (N.s || c.s).map(Number), cost: c.act ? (N.cost != null ? +N.cost : c.act.cost) : null };
+    if (JSON.stringify(before) === JSON.stringify(after)) return null;
+    const dS = after.s.reduce((a, n) => a + n, 0) - before.s.reduce((a, n) => a + n, 0), dC = (after.cost || 0) - (before.cost || 0);
+    const auto = dS > 0 || (dS === 0 && dC < 0) ? 'buff' : dS < 0 || (dS === 0 && dC > 0) ? 'nerf' : 'ajuste';
+    return { id, c, before, after, kind: (S.balKind || {})[id] || auto };
+  }).filter(Boolean);
+}
+function balChanges(it) {
+  const A = S.cat.attrs || ['FOR', 'DEF', 'VEL', 'ENE', 'TEC', 'INT'], out = [];
+  it.after.s.forEach((v, i) => { if (v !== it.before.s[i]) out.push('<span class="' + (v > it.before.s[i] ? 'up' : 'dn') + '">' + A[i] + ' ' + it.before.s[i] + ' → ' + v + '</span>'); });
+  if (it.before.cost !== it.after.cost) out.push('<span class="' + (it.after.cost < it.before.cost ? 'up' : 'dn') + '">Custo ' + it.before.cost + ' → ' + it.after.cost + '</span>');
+  return out.join(' ');
+}
+function balNoteHTML() {
+  const L = balDiff(); if (!L.length) return '';
+  S.balPv = true;
+  const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  return '<div class="card sec"><h2>Aviso aos jogadores</h2><p class="muted">Cada carta mudada precisa de uma explicação para salvar. O aviso aparece nas Notícias do jogo; tocando nele, o jogador vê as cartas e o motivo de cada mudança.</p>'
+    + '<div class="form"><label class="f wide">Título do aviso<input type="text" id="bal-title" maxlength="80" value="Buffs e nerfs · ' + today + '"></label></div>'
+    + '<div class="f wide" style="margin-top:10px">Texto de abertura (opcional)' + richBox('bal-intro', '', { ph: 'Ex.: Ajustes da semana para equilibrar os Anjos…', preview: false }) + '</div>'
+    + L.map((it) => '<div class="bal-it"><div class="bal-h"><b>' + esc(it.c.nome) + '</b> <span class="muted">' + (FAC[it.c.fac] || it.c.fac) + ' · ' + it.c.rar + '</span> <span class="bal-ch">' + balChanges(it) + '</span>'
+      + '<select data-act="bal-kind" data-id="' + it.id + '"><option value="buff"' + (it.kind === 'buff' ? ' selected' : '') + '>Buff</option><option value="nerf"' + (it.kind === 'nerf' ? ' selected' : '') + '>Nerf</option><option value="ajuste"' + (it.kind === 'ajuste' ? ' selected' : '') + '>Ajuste</option></select></div>'
+      + richBox('bal-' + it.id, '', { small: true, preview: false, ph: 'Por que esta carta mudou? (obrigatório)' }) + '</div>').join('')
+    + '<div class="rt-pv"><small>Prévia no jogo (tela que abre ao tocar no aviso)</small><div class="pv-sheet" id="bal-pv">' + balPreview(L) + '</div></div></div>';
+}
+function balPreview(L) {
+  L = L || balDiff();
+  const K = { buff: 'BUFF', nerf: 'NERF', ajuste: 'AJUSTE' };
+  return '<h3 class="pv-t">' + esc(val('bal-title') || 'Buffs e nerfs') + '</h3>' + (richHasContent(S.rich['bal-intro']) ? '<div class="pv-rich">' + richClean(S.rich['bal-intro']) + '</div>' : '')
+    + L.map((it) => '<div class="pv-bal"><b>' + esc(it.c.nome) + '</b><em class="pv-k ' + it.kind + '">' + K[it.kind] + '</em><div class="bal-ch">' + balChanges(it) + '</div>'
+      + (richHasContent(S.rich['bal-' + it.id]) ? '<div class="pv-rich">' + richClean(S.rich['bal-' + it.id]) + '</div>' : '<p class="bad-t">Falta a explicação.</p>') + '</div>').join('');
+}
+function balPreviewSync() { const pv = document.getElementById('bal-pv'); if (pv) pv.innerHTML = balPreview(); }
+async function balSave() {
+  const L = balDiff();
+  const miss = L.filter((it) => !richHasContent(S.rich['bal-' + it.id]));
+  if (miss.length) { toast('Escreva a explicação de: ' + miss.map((it) => it.c.nome).join(', ') + '.', true); return; }
+  if (!confirm('Publicar ' + L.length + (L.length === 1 ? ' mudança' : ' mudanças') + ' e o aviso nas Notícias?')) return;
+  const items = L.map((it) => ({ id: it.id, kind: it.kind === 'ajuste' ? 'adj' : it.kind, before: it.before, after: it.after, note: richClean(S.rich['bal-' + it.id]) }));
+  const notes = Object.assign({}, (S.cfg.balance && S.cfg.balance.notes) || {}); items.forEach((it) => { notes[it.id] = { at: new Date().toISOString(), kind: it.kind, note: it.note }; });
+  if (!(await saveCfg('balance', Object.assign({}, S.cfg.balance || {}, { cards: S.bal, notes })))) return;
+  const intro = richClean(S.rich['bal-intro'] || '');
+  const { error } = await sb.from('news').insert({ title: val('bal-title') || 'Buffs e nerfs', tag: 'Balanceamento', body: BALN + JSON.stringify({ intro, items }), pinned: false, starts_at: new Date().toISOString() });
+  if (error) { fail(error); toast('Os ajustes foram publicados, mas o aviso não entrou nas Notícias: ' + error.message, true); }
+  else toast('Ajustes e aviso publicados. Os jogadores recebem ao abrir o jogo.');
+  S.bal = JSON.parse(JSON.stringify(S.bal)); S.balKind = {}; Object.keys(S.rich).forEach((k) => { if (k.indexOf('bal-') === 0) delete S.rich[k]; }); S.news = null; S.balPv = false; render();
 }
 function setBal(id, fn) {
   const c = cardBy(id); if (!c) return;
@@ -445,6 +596,7 @@ function eventsHTML() {
 }
 
 /* ---------- NOTÍCIAS ---------- */
+const newsPlain = (b) => { b = String(b || ''); if (b.startsWith(BALN)) { try { const d = JSON.parse(b.slice(BALN.length)); return 'Aviso de balanceamento · ' + (d.items || []).length + ' carta(s)'; } catch (err) { return ''; } } return b.startsWith(RICH) ? richText(b.slice(RICH.length)) : b; };
 async function loadNews() { const { data, error } = await sb.from('news').select('*').order('starts_at', { ascending: false }).limit(100); if (error) throw error; S.news = data; }
 function newsHTML() {
   const e = S.edit && S.edit.t === 'news' ? S.edit.row : null;
@@ -457,9 +609,9 @@ function newsHTML() {
     + '<label class="f">Aparece a partir de<input type="datetime-local" id="nw-start" value="' + toInput(e ? e.starts_at : new Date().toISOString()) + '"></label>'
     + '<label class="f">Sai do ar em (opcional)<input type="datetime-local" id="nw-end" value="' + toInput(e ? e.ends_at : null) + '"></label>'
     + '<label class="chk"><input type="checkbox" id="nw-pin"' + (e && e.pinned ? ' checked' : '') + '> Fixar no topo</label>'
-    + '<label class="f wide">Texto (linha em branco separa parágrafos)<textarea id="nw-body" maxlength="4000">' + esc(e ? e.body : '') + '</textarea></label>'
+    + '<div class="f wide">Texto' + richBox('nw-body', e ? richFrom(e.body) : '', { ph: 'Escreva a notícia…' }) + '</div>'
     + '</div><div class="row" style="margin-top:12px"><button class="btn go" data-act="nw-save">' + (e ? 'Salvar' : 'Publicar') + '</button>' + (e ? '<button class="btn" data-act="edit-cancel">Cancelar</button>' : '') + '</div></div>'
-    + '<div class="card sec"><h2>Publicadas</h2>' + ((S.news || []).length ? S.news.map((n) => '<div class="list-item"><div class="t"><b>' + (n.pinned ? '📌 ' : '') + esc(n.title) + ' ' + status(n) + '</b><p>' + (n.tag ? esc(n.tag) + ' · ' : '') + dt(n.starts_at) + (n.ends_at ? ' até ' + dt(n.ends_at) : '') + '\n' + esc(n.body).slice(0, 300) + '</p></div><button class="btn sm" data-act="nw-edit" data-v="' + n.id + '">Editar</button><button class="btn sm danger" data-act="nw-del" data-v="' + n.id + '">Apagar</button></div>').join('') : '<p class="muted">Nenhuma notícia ainda.</p>') + '</div>';
+    + '<div class="card sec"><h2>Publicadas</h2>' + ((S.news || []).length ? S.news.map((n) => '<div class="list-item"><div class="t"><b>' + (n.pinned ? '📌 ' : '') + esc(n.title) + ' ' + status(n) + '</b><p>' + (n.tag ? esc(n.tag) + ' · ' : '') + dt(n.starts_at) + (n.ends_at ? ' até ' + dt(n.ends_at) : '') + '\n' + esc(newsPlain(n.body)).slice(0, 300) + '</p></div><button class="btn sm" data-act="nw-edit" data-v="' + n.id + '">Editar</button><button class="btn sm danger" data-act="nw-del" data-v="' + n.id + '">Apagar</button></div>').join('') : '<p class="muted">Nenhuma notícia ainda.</p>') + '</div>';
 }
 
 /* ---------- PRÊMIOS ---------- */
@@ -489,7 +641,7 @@ function mailHTML() {
     + (to === 'all' ? '<label class="chk wide"><input type="checkbox" id="ml-new"> Incluir contas novas (criadas depois deste prêmio)</label>'
       : '<div class="f wide">E-mail do jogador<div class="row"><input type="email" id="ml-email" style="flex:1" value="' + esc(u ? u.email : '') + '"><button class="btn sm" data-act="mail-find">Procurar</button></div>' + (u ? '<span class="pill p-good">' + esc(u.email) + ' · nível ' + (u.level == null ? '—' : u.level) + ' · ' + nf(u.matches) + ' partidas</span>' : '') + '</div>')
     + '<label class="f wide">Título<input type="text" id="ml-title" maxlength="80" placeholder="Compensação da manutenção"></label>'
-    + '<label class="f wide">Mensagem (opcional)<textarea id="ml-body" maxlength="1000" style="min-height:70px"></textarea></label>'
+    + '<div class="f wide">Mensagem (opcional)' + richBox('ml-body', '', { ph: 'Mensagem que acompanha o prêmio…' }) + '</div>'
     + '<label class="f">Ouro<input type="number" id="ml-gold" min="0" max="100000" value="0"></label>'
     + '<label class="f">Fragmentos<input type="number" id="ml-dust" min="0" max="100000" value="0"></label>'
     + '<label class="f">Pacotes de cartas<input type="number" id="ml-packs" min="0" max="50" value="0"></label>'
@@ -646,7 +798,7 @@ document.addEventListener('click', async (e) => {
       const b = Object.assign({}, S.cfg.bots || {}); b.targets = {}; HS.forEach((h) => { b.targets[h] = Math.max(5, Math.min(95, +val('tg-' + h) || BOT_TARGETS[h])); }); b.tol = Math.max(3, Math.min(40, +val('tg-tol') || 12));
       if (await saveCfg('bots', b)) { toast('Metas salvas.'); render(); }
     } else if (act === 'save-bal') {
-      if (await saveCfg('balance', Object.assign({}, S.cfg.balance || {}, { cards: S.bal }))) { S.bal = JSON.parse(JSON.stringify(S.bal)); toast('Ajustes publicados. Os jogadores recebem ao abrir o jogo.'); render(); }
+      await balSave();
     } else if (act === 'bal-reset') { delete S.bal[v]; render(); }
     else if (act === 'rp-find') {
       const { data, error } = await sb.rpc('admin_recent_matches', { p_email: val('rp-email') || null, p_days: S.days || 30 }); if (error) return fail(error);
@@ -687,13 +839,13 @@ document.addEventListener('click', async (e) => {
     } else if (act === 'ev-end') { const { error } = await sb.from('live_events').update({ ends_at: new Date().toISOString() }).eq('id', v); if (error) return fail(error); S.events = null; render(); }
     else if (act === 'ev-del') { if (!confirm('Apagar este evento?')) return; const { error } = await sb.from('live_events').delete().eq('id', v); if (error) return fail(error); S.events = null; render(); }
     else if (act === 'nw-save') {
-      const row = { title: val('nw-title'), tag: val('nw-tag') || null, body: (document.getElementById('nw-body') || {}).value || '', pinned: checked('nw-pin'), starts_at: fromInput(val('nw-start')) || new Date().toISOString(), ends_at: fromInput(val('nw-end')) };
+      const row = { title: val('nw-title'), tag: val('nw-tag') || null, body: richTo(richGet('nw-body')), pinned: checked('nw-pin'), starts_at: fromInput(val('nw-start')) || new Date().toISOString(), ends_at: fromInput(val('nw-end')) };
       if (!row.title) return toast('Dê um título à notícia.', true);
       const q = S.edit && S.edit.t === 'news' ? sb.from('news').update(row).eq('id', S.edit.row.id) : sb.from('news').insert(row);
       const { error } = await q; if (error) return fail(error);
-      toast(S.edit ? 'Notícia salva.' : 'Notícia publicada.'); S.edit = null; S.news = null; S.fresh = true; render();
-    } else if (act === 'nw-edit') { S.fresh = true; S.edit = { t: 'news', row: S.news.find((n) => String(n.id) === v) }; render(); window.scrollTo(0, 0); }
-    else if (act === 'edit-cancel') { S.fresh = true; S.edit = null; render(); }
+      toast(S.edit ? 'Notícia salva.' : 'Notícia publicada.'); S.edit = null; S.news = null; S.fresh = true; delete S.rich['nw-body']; render();
+    } else if (act === 'nw-edit') { S.fresh = true; S.edit = { t: 'news', row: S.news.find((n) => String(n.id) === v) }; delete S.rich['nw-body']; render(); window.scrollTo(0, 0); }
+    else if (act === 'edit-cancel') { S.fresh = true; S.edit = null; delete S.rich['nw-body']; render(); }
     else if (act === 'nw-del') { if (!confirm('Apagar esta notícia?')) return; const { error } = await sb.from('news').delete().eq('id', v); if (error) return fail(error); S.news = null; render(); }
     else if (act === 'mail-to') { S.mailTo = v; render(); }
     else if (act === 'mail-find' || act === 'pl-find') {
@@ -718,14 +870,14 @@ document.addEventListener('click', async (e) => {
       const gm = n('ml-gems', 100000), fp = n('ml-fpacks', 50), cp = n('ml-cpacks', 50), ep = n('ml-epacks', 50);
       if (gm) reward.gems = gm; if (fp) reward.fpacks = fp; if (cp) reward.cmdPacks = cp; if (ep) reward.eqPacks = ep;
       ['cards', 'cmds', 'eqs'].forEach((k) => { if (S.picks[k].length) reward[k] = S.picks[k].slice(); });
-      const row = { title: val('ml-title'), body: (document.getElementById('ml-body') || {}).value || '', reward, expires_at: fromInput(val('ml-exp')) };
+      const row = { title: val('ml-title'), body: richTo(richGet('ml-body')), reward, expires_at: fromInput(val('ml-exp')) };
       if (!row.title) return toast('Dê um título ao prêmio.', true);
       if (!Object.keys(reward).length) return toast('Escolha pelo menos um item do prêmio.', true);
       if (S.mailTo === 'one') { if (!S.mailUser) return toast('Procure o jogador pelo e-mail primeiro.', true); row.target = S.mailUser.id; }
       else row.new_players = checked('ml-new');
       if (!confirm('Enviar “' + row.title + '” (' + rewardTxt(reward) + ') para ' + (row.target ? S.mailUser.email : 'todos os jogadores') + '?')) return;
       const { error } = await sb.from('mail').insert(row); if (error) return fail(error);
-      toast('Prêmio enviado.'); S.picks = { cards: [], cmds: [], eqs: [] }; S.mail = null; S.fresh = true; render();
+      toast('Prêmio enviado.'); delete S.rich['ml-body']; S.picks = { cards: [], cmds: [], eqs: [] }; S.mail = null; S.fresh = true; render();
     } else if (act === 'mail-del') { if (!confirm('Apagar este prêmio? Quem ainda não resgatou não vai mais vê-lo.')) return; const { error } = await sb.from('mail').delete().eq('id', v); if (error) return fail(error); S.mail = null; render(); }
     else if (act === 'rel-use') {
       const r = Object.assign({}, S.cfg.release || {}, { bundle: +v, rollback: checked('rl-back') });
@@ -746,15 +898,28 @@ document.addEventListener('click', async (e) => {
   } catch (err) { fail(err); }
 });
 document.addEventListener('change', (e) => {
-  const el = e.target, act = el.dataset && el.dataset.act; if (!act) return;
+  const el = e.target;
+  if (el.dataset && el.dataset.rtcol) { const k = el.dataset.rtcol, ed = richFocus(k); if (ed) { document.execCommand('foreColor', false, el.value); richSync(k); } return; }
+  if (el.dataset && el.dataset.rtsize) { const k = el.dataset.rtsize, ed = richFocus(k); if (ed && el.value) { document.execCommand('fontSize', false, el.value); richSync(k); } el.value = ''; return; }
+  const act = el.dataset && el.dataset.act; if (!act) return;
   if (act === 'bot-h') { S.botH = el.value; render(); }
+  else if (act === 'bal-kind') { S.balKind = S.balKind || {}; S.balKind[el.dataset.id] = el.value; balPreviewSync(); }
   else if (act === 'bot-st') { S.botSt = el.value; render(); }
   else if (act === 'card-fac') { S.cardFac = el.value; render(); }
   else if (act === 'stat') { const i = +el.dataset.i; setBal(el.dataset.id, (o) => { o.s[i] = Math.max(0, Math.min(30, Math.round(+el.value || 0))); }); render(); }
   else if (act === 'cost') { setBal(el.dataset.id, (o) => { o.cost = Math.max(0, Math.min(5, Math.round(+el.value || 0))); }); render(); }
 });
+// the editor's buttons keep the text selection (mousedown would take the focus away)
+document.addEventListener('mousedown', (e) => { const b = e.target.closest('.rt-b'); if (b) { e.preventDefault(); richCmd(b.dataset.rk, b.dataset.rt); } });
+document.addEventListener('click', (e) => {
+  const im = e.target.closest('.rt-ed img'); if (!im) return;
+  const w = parseFloat(im.style.width) || 100, nx = { 100: 66, 66: 50, 50: 33, 33: 100 }[Math.round(w)] || 100;
+  im.style.width = nx + '%'; toast('Largura da imagem: ' + nx + '%'); richSync(im.closest('.rt-ed').dataset.rk);
+});
 let qT = null;
 document.addEventListener('input', (e) => {
+  const ed = e.target.closest && e.target.closest('.rt-ed'); if (ed) { richSync(ed.dataset.rk); return; }
+  if (e.target.id === 'bal-title') { balPreviewSync(); return; }
   if (e.target.id === 'card-q') { clearTimeout(qT); const v = e.target.value; qT = setTimeout(() => { S.cardQ = v; render().then(() => { const i = document.getElementById('card-q'); if (i) { i.focus(); i.setSelectionRange(v.length, v.length); } }); }, 250); }
 });
 document.addEventListener('keydown', (e) => {
