@@ -192,3 +192,13 @@ button.rpc { font: inherit; color: inherit; text-align: left; cursor: pointer; w
 .bal-it { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
 .bal-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .bal-h select { margin-left: auto; }
+.pv-bal { flex-direction: row; gap: 12px; align-items: flex-start; }
+.pv-bt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.pv-bt > b { color: #5a1408; }
+.pv-card { position: relative; flex: none; }
+.pv-card img { display: block; width: 100%; height: auto; }
+.pv-card b { position: absolute; transform: translate(-50%, -50%); font-family: 'Grenze', Georgia, serif; font-weight: 800; color: #f6f1e6; line-height: 1; text-shadow: 0 1px 0 #000, 0 0 6px rgba(0,0,0,.9); }
+.pv-card b.up { color: #8dff9e; text-shadow: 0 1px 0 #000, 0 0 8px rgba(40,200,90,.9); }
+.pv-card b.dn { color: #ff9a8a; text-shadow: 0 1px 0 #000, 0 0 8px rgba(220,50,40,.9); }
+.pv-card b.cost { font-family: Inter, sans-serif; font-size: 10px; color: #fff; }
+@media (max-width: 420px) { .pv-bal { flex-direction: column; } }

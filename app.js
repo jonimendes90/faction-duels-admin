@@ -301,10 +301,10 @@ async function richImgFile(file) {
   const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg'), path = 'news/' + Date.now() + '-' + Math.random().toString(36).slice(2, 7) + '.' + ext;
   try { const { error } = await sb.storage.from('game').upload(path, file, { contentType: file.type, upsert: false }); if (!error) return STORE + path; } catch (err) {}
   const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = URL.createObjectURL(file); });
-  const sc = Math.min(1, 720 / img.width), c = document.createElement('canvas'); c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+  const sc = Math.min(1, 480 / img.width), c = document.createElement('canvas'); c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
   c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-  toast('Imagem embutida no texto (o site não tem permissão de enviar arquivos ao servidor).');
-  return c.toDataURL('image/webp', 0.78);
+  toast('Imagem embutida no texto (o envio ao servidor falhou).');
+  return c.toDataURL('image/webp', 0.7);
 }
 // the last selection inside each editor, so the colour picker and the size list (which take the focus) still apply to it
 const R_SEL = {};
@@ -390,12 +390,22 @@ function balNoteHTML() {
       + richBox('bal-' + it.id, '', { small: true, preview: false, ph: 'Por que esta carta mudou? (obrigatório)' }) + '</div>').join('')
     + '<div class="rt-pv"><small>Prévia no jogo (tela que abre ao tocar no aviso)</small><div class="pv-sheet" id="bal-pv">' + balPreview(L) + '</div></div></div>';
 }
+/* the card as it looks in the game: a picture of it (data/cards, taken from the game without the numbers) with the
+   numbers written on top, so the preview shows the new values; the changed ones in green (up) or red (down) */
+let CARD_META = null;
+fetch('data/cards/meta.json').then((r) => r.json()).then((m) => { CARD_META = m; if (S.balPv) balPreviewSync(); }).catch(() => {});
+function cardPic(it) {
+  const M = CARD_META, W = 132; if (!M) return '';
+  const fs = M.font * W / 100 * .9, nums = it.after.s.map((v, i) => { const p = M.pos[i], o = it.before.s[i]; return '<b class="' + (v > o ? 'up' : v < o ? 'dn' : '') + '" style="left:' + p[0] + '%;top:' + p[1] + '%;font-size:' + fs + 'px">' + v + '</b>'; }).join('');
+  const cp = M.cost[it.id], cost = cp && it.after.cost != null ? '<b class="cost ' + (it.after.cost < it.before.cost ? 'up' : it.after.cost > it.before.cost ? 'dn' : '') + '" style="left:' + cp[0] + '%;top:' + cp[1] + '%">' + it.after.cost + '</b>' : '';
+  return '<div class="pv-card" style="width:' + W + 'px"><img src="data/cards/' + esc(it.id) + '.webp" alt="">' + nums + cost + '</div>';
+}
 function balPreview(L) {
   L = L || balDiff();
   const K = { buff: 'BUFF', nerf: 'NERF', ajuste: 'AJUSTE' };
   return '<h3 class="pv-t">' + esc(val('bal-title') || 'Buffs e nerfs') + '</h3>' + (richHasContent(S.rich['bal-intro']) ? '<div class="pv-rich">' + richClean(S.rich['bal-intro']) + '</div>' : '')
-    + L.map((it) => '<div class="pv-bal"><b>' + esc(it.c.nome) + '</b><em class="pv-k ' + it.kind + '">' + K[it.kind] + '</em><div class="bal-ch">' + balChanges(it) + '</div>'
-      + (richHasContent(S.rich['bal-' + it.id]) ? '<div class="pv-rich">' + richClean(S.rich['bal-' + it.id]) + '</div>' : '<p class="bad-t">Falta a explicação.</p>') + '</div>').join('');
+    + L.map((it) => '<div class="pv-bal">' + cardPic(it) + '<div class="pv-bt"><b>' + esc(it.c.nome) + '</b><em class="pv-k ' + it.kind + '">' + K[it.kind] + '</em><div class="bal-ch">' + balChanges(it) + '</div>'
+      + (richHasContent(S.rich['bal-' + it.id]) ? '<div class="pv-rich">' + richClean(S.rich['bal-' + it.id]) + '</div>' : '<p class="bad-t">Falta a explicação.</p>') + '</div></div>').join('');
 }
 function balPreviewSync() { const pv = document.getElementById('bal-pv'); if (pv) pv.innerHTML = balPreview(); }
 async function balSave() {
