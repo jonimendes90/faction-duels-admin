@@ -113,6 +113,7 @@ async function render() {
     else if (S.tab === 'mail') { if (!S.mail) await loadMail(); m.innerHTML = mailHTML(); }
     else if (S.tab === 'versions') { if (!S.releases) await loadReleases(); m.innerHTML = versionsHTML(); }
     else if (S.tab === 'player') m.innerHTML = playerHTML();
+    else if (S.tab === 'feedback') { if (!S.fb) { m.innerHTML = '<p class="muted pad">Carregando…</p>'; await loadFeedback(); } m.innerHTML = feedbackHTML(); }
     else if (S.tab === 'econ') { if (!S.econ) { m.innerHTML = '<p class="muted pad">Carregando…</p>'; await loadEcon(); } m.innerHTML = econHTML(); }
     if (keep) restoreForm(keep);
   } catch (e) { fail(e); }
@@ -702,6 +703,26 @@ function mailHTML() {
 }
 
 /* ---------- VERSÕES ---------- */
+/* ---------- Beta 1.68: feedback e sugestões enviados pelo jogo (Configurações › Suporte) ---------- */
+async function loadFeedback() {
+  let q = sb.from('feedback').select('*').order('created_at', { ascending: false }).limit(200);
+  if (S.fbSt && S.fbSt !== 'todos') q = q.eq('status', S.fbSt);
+  const { data, error } = await q; if (error) throw error; S.fb = data || [];
+}
+function feedbackHTML() {
+  const K = { sugestao: 'Sugestão', problema: 'Problema', outro: 'Outro' }, ST = { novo: 'Novo', visto: 'Visto', resolvido: 'Resolvido' };
+  const cur = S.fbSt || 'novo';
+  return '<h1>Feedback</h1><p class="sub">Mensagens que os jogadores mandam pelo jogo (Configurações › Suporte › Enviar feedback ou sugestão). O UID é o mesmo que o jogador vê nas Configurações.</p>'
+    + '<div class="row" style="gap:6px;margin-bottom:12px">' + ['novo', 'visto', 'resolvido', 'todos'].map((k) => '<button class="btn sm' + (cur === k ? ' go' : '') + '" data-act="fb-st" data-v="' + k + '">' + (ST[k] || 'Todos') + '</button>').join('') + '<button class="btn sm" data-act="fb-reload">Atualizar</button></div>'
+    + ((S.fb || []).length ? S.fb.map((f) => '<div class="card fb-it"><div class="fb-h"><span class="pill ' + (f.kind === 'problema' ? 'p-bad' : f.kind === 'sugestao' ? 'p-good' : '') + '">' + (K[f.kind] || f.kind) + '</span>'
+        + '<b class="mono" title="' + esc(f.user_id) + '">' + esc(String(f.user_id).slice(0, 8).toUpperCase()) + '</b><span class="muted">' + dt(f.created_at) + ' · Beta ' + esc(f.ver || '?') + (f.build ? ' · ' + f.build : '') + (f.apk ? ' · APK ' + f.apk : '') + ' · ' + esc(f.lang || 'pt') + (f.lvl ? ' · nível ' + f.lvl : '') + '</span>'
+        + '<span class="pill">' + (ST[f.status] || f.status) + '</span></div>'
+        + '<p class="fb-b">' + esc(f.body) + '</p>'
+        + '<div class="row" style="gap:6px"><button class="btn sm" data-act="fb-uid" data-v="' + esc(f.user_id) + '">Copiar UID</button>'
+        + (f.status !== 'visto' ? '<button class="btn sm" data-act="fb-set" data-v="' + f.id + ':visto">Marcar visto</button>' : '')
+        + (f.status !== 'resolvido' ? '<button class="btn sm go" data-act="fb-set" data-v="' + f.id + ':resolvido">Resolvido</button>' : '') + '</div></div>').join('')
+      : '<p class="muted">Nenhuma mensagem aqui.</p>');
+}
 async function loadReleases() { const { data, error } = await sb.from('releases').select('build,label,commit_sha,native,size_kb,created_at').order('build', { ascending: false }).limit(60); if (error) throw error; S.releases = data; }
 function versionsHTML() {
   const r = S.cfg.release || {};
@@ -820,6 +841,14 @@ document.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const act = el.dataset.act, v = el.dataset.v;
   try {
+    if (act === 'fb-st') { S.fbSt = v; S.fb = null; render(); return; }
+    if (act === 'fb-reload') { S.fb = null; render(); return; }
+    if (act === 'fb-uid') { try { await navigator.clipboard.writeText(v); toast('UID copiado.'); } catch (err) { toast(v); } return; }
+    if (act === 'fb-set') {
+      const [id, st] = String(v).split(':');
+      const { error } = await sb.from('feedback').update({ status: st }).eq('id', +id); if (error) throw error;
+      S.fb = null; toast('Marcado como ' + st + '.'); render(); return;
+    }
     if (act === 'login') {
       const { error } = await sb.auth.signInWithPassword({ email: val('lg-email'), password: (document.getElementById('lg-pass') || {}).value || '' });
       if (error) renderLogin(/invalid/i.test(error.message) ? 'E-mail ou senha incorretos. Se você entra no jogo pelo Google, use “Entrar com Google”.' : error.message);

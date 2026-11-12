@@ -206,3 +206,8 @@ button.rpc { font: inherit; color: inherit; text-align: left; cursor: pointer; w
 .trx summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .trx-l { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .trx-l > b { color: var(--gold2); }
+/* Beta 1.68: feedback */
+.fb-it { margin-bottom: 10px; }
+.fb-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.fb-b { white-space: pre-wrap; margin: 6px 0 10px; line-height: 1.45; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
