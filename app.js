@@ -279,6 +279,30 @@ const richHasContent = (html) => !!richText(html) || /<img /.test(richClean(html
 const richFrom = (body) => { body = String(body || ''); if (body.startsWith(RICH)) return body.slice(RICH.length); return esc(body).split(/\n{2,}/).filter(Boolean).map((p) => '<p>' + p.replace(/\n/g, '<br>') + '</p>').join(''); };
 const richTo = (html) => { const c = richClean(html); return c ? RICH + c : ''; };
 S.rich = {};
+/* ---------- textos em inglês e espanhol (opcionais) ----------
+   Vão no fim do texto como <!--i18n:{...}-->; o jogo mostra a versão do idioma do jogador e, sem ela, o português. */
+const TRL = [['en', 'Inglês'], ['es', 'Espanhol']];
+const trMark = (o) => (o && Object.keys(o).length ? '<!--i18n:' + encodeURIComponent(JSON.stringify(o)) + '-->' : '');
+function trParse(body) {
+  body = String(body || ''); const m = /<!--i18n:([^>]*?)-->/.exec(body);
+  let o = {}; if (m) { try { o = JSON.parse(decodeURIComponent(m[1])) || {}; } catch (err) { o = {}; } }
+  return { base: body.replace(/<!--i18n:[^>]*?-->/g, ''), o };
+}
+function trBlock(pre, rich, o, opts) {
+  o = o || {}; opts = opts || {};
+  const has = TRL.some(([k]) => o[k] && (o[k].title || o[k].body));
+  return '<details class="trx wide"' + (has ? ' open' : '') + '><summary>Inglês e espanhol (opcional): quem joga nesses idiomas vê esta versão; sem ela, vê o português</summary>'
+    + TRL.map(([k, n]) => '<div class="trx-l"><b>' + n + '</b><label class="f wide">Título<input type="text" id="' + pre + '-t-' + k + '" maxlength="' + (opts.tmax || 120) + '" value="' + esc((o[k] && o[k].title) || '') + '"></label>'
+      + (rich ? '<div class="f wide">Texto' + richBox(pre + '-b-' + k, (o[k] && o[k].body ? richFrom(o[k].body) : ''), { preview: false, small: true }) + '</div>'
+        : '<label class="f wide">Descrição<input type="text" id="' + pre + '-b-' + k + '" maxlength="' + (opts.bmax || 200) + '" value="' + esc((o[k] && o[k].body) || '') + '"></label>') + '</div>').join('')
+    + '</details>';
+}
+function trCollect(pre, rich) {
+  const o = {};
+  TRL.forEach(([k]) => { const t = val(pre + '-t-' + k), b = rich ? richTo(S.rich[pre + '-b-' + k] || '') : val(pre + '-b-' + k); if (t || b) o[k] = Object.assign(t ? { title: t } : {}, b ? { body: b } : {}); });
+  return o;
+}
+const trForget = (pre) => TRL.forEach(([k]) => { delete S.rich[pre + '-b-' + k]; });
 const richGet = (k, def) => (k in S.rich ? S.rich[k] : (S.rich[k] = def || ''));
 function richBox(k, def, o) {
   o = o || {};
@@ -388,6 +412,11 @@ function balNoteHTML() {
     + L.map((it) => '<div class="bal-it"><div class="bal-h"><b>' + esc(it.c.nome) + '</b> <span class="muted">' + (FAC[it.c.fac] || it.c.fac) + ' · ' + it.c.rar + '</span> <span class="bal-ch">' + balChanges(it) + '</span>'
       + '<select data-act="bal-kind" data-id="' + it.id + '"><option value="buff"' + (it.kind === 'buff' ? ' selected' : '') + '>Buff</option><option value="nerf"' + (it.kind === 'nerf' ? ' selected' : '') + '>Nerf</option><option value="ajuste"' + (it.kind === 'ajuste' ? ' selected' : '') + '>Ajuste</option></select></div>'
       + richBox('bal-' + it.id, '', { small: true, preview: false, ph: 'Por que esta carta mudou? (obrigatório)' }) + '</div>').join('')
+    + '<details class="trx"><summary>Inglês e espanhol (opcional): quem joga nesses idiomas vê esta versão; sem ela, vê o português</summary>'
+    + TRL.map(([k, n]) => '<div class="trx-l"><b>' + n + '</b><label class="f wide">Título<input type="text" id="bal-t-' + k + '" maxlength="80"></label>'
+      + '<div class="f wide">Texto de abertura' + richBox('bal-i-' + k, '', { preview: false, small: true }) + '</div>'
+      + L.map((it) => '<div class="f wide">' + esc(it.c.nome) + richBox('bal-' + k + '-' + it.id, '', { preview: false, small: true }) + '</div>').join('') + '</div>').join('')
+    + '</details>'
     + '<div class="rt-pv"><small>Prévia no jogo (tela que abre ao tocar no aviso)</small><div class="pv-sheet" id="bal-pv">' + balPreview(L) + '</div></div></div>';
 }
 /* the card as it looks in the game: a picture of it (data/cards, taken from the game without the numbers) with the
@@ -417,7 +446,11 @@ async function balSave() {
   const notes = Object.assign({}, (S.cfg.balance && S.cfg.balance.notes) || {}); items.forEach((it) => { notes[it.id] = { at: new Date().toISOString(), kind: it.kind, note: it.note }; });
   if (!(await saveCfg('balance', Object.assign({}, S.cfg.balance || {}, { cards: S.bal, notes })))) return;
   const intro = richClean(S.rich['bal-intro'] || '');
-  const { error } = await sb.from('news').insert({ title: val('bal-title') || 'Buffs e nerfs', tag: 'Balanceamento', body: BALN + JSON.stringify({ intro, items }), pinned: false, starts_at: new Date().toISOString() });
+  const tr = {};
+  TRL.forEach(([k]) => { const o = {}, t = val('bal-t-' + k), i = richClean(S.rich['bal-i-' + k] || ''), notes = {};
+    L.forEach((it) => { const h = richClean(S.rich['bal-' + k + '-' + it.id] || ''); if (h) notes[it.id] = h; });
+    if (t) o.title = t; if (i) o.intro = i; if (Object.keys(notes).length) o.notes = notes; if (Object.keys(o).length) tr[k] = o; });
+  const { error } = await sb.from('news').insert({ title: val('bal-title') || 'Buffs e nerfs', tag: 'Balanceamento', body: BALN + JSON.stringify(Object.assign({ intro, items }, Object.keys(tr).length ? { tr } : {})), pinned: false, starts_at: new Date().toISOString() });
   if (error) { fail(error); toast('Os ajustes foram publicados, mas o aviso não entrou nas Notícias: ' + error.message, true); }
   else toast('Ajustes e aviso publicados. Os jogadores recebem ao abrir o jogo.');
   S.bal = JSON.parse(JSON.stringify(S.bal)); S.balKind = {}; Object.keys(S.rich).forEach((k) => { if (k.indexOf('bal-') === 0) delete S.rich[k]; }); S.news = null; S.balPv = false; render();
@@ -600,13 +633,14 @@ function eventsHTML() {
     + '<label class="f">Termina<input type="datetime-local" id="ev-end" value="' + toInput(end.toISOString()) + '"></label>'
     + '<label class="f wide">Título (aparece no jogo)<input type="text" id="ev-title" maxlength="80" placeholder="Fim de semana de ouro em dobro"></label>'
     + '<label class="f wide">Descrição curta (opcional)<input type="text" id="ev-body" maxlength="200" placeholder="Todas as partidas dão o dobro de ouro"></label>'
+    + trBlock('ev', false, null, { tmax: 80, bmax: 200 })
     + '</div><div class="row" style="margin-top:12px"><button class="btn go" data-act="ev-save">Criar evento</button></div></div>'
     + '<div class="card sec"><h2>Eventos</h2>' + ((S.events || []).length ? S.events.map((e) => '<div class="list-item"><div class="t"><b>' + esc(e.title) + ' ' + status(e) + '</b><p>' + ({ gold_mult: 'Ouro', xp_mult: 'XP' }[e.kind] || e.kind) + ' ×' + e.value + ' · ' + dt(e.starts_at) + ' até ' + dt(e.ends_at) + (e.body ? '\n' + esc(e.body) : '') + '</p></div>'
       + (Date.parse(e.ends_at) > now ? '<button class="btn sm" data-act="ev-end" data-v="' + e.id + '">Encerrar agora</button>' : '') + '<button class="btn sm danger" data-act="ev-del" data-v="' + e.id + '">Apagar</button></div>').join('') : '<p class="muted">Nenhum evento ainda.</p>') + '</div>';
 }
 
 /* ---------- NOTÍCIAS ---------- */
-const newsPlain = (b) => { b = String(b || ''); if (b.startsWith(BALN)) { try { const d = JSON.parse(b.slice(BALN.length)); return 'Aviso de balanceamento · ' + (d.items || []).length + ' carta(s)'; } catch (err) { return ''; } } return b.startsWith(RICH) ? richText(b.slice(RICH.length)) : b; };
+const newsPlain = (b) => { b = String(b || ''); if (b.startsWith(BALN)) { try { const d = JSON.parse(b.slice(BALN.length)); return 'Aviso de balanceamento · ' + (d.items || []).length + ' carta(s)'; } catch (err) { return ''; } } b = trParse(b).base; return b.startsWith(RICH) ? richText(b.slice(RICH.length)) : b; };
 async function loadNews() { const { data, error } = await sb.from('news').select('*').order('starts_at', { ascending: false }).limit(100); if (error) throw error; S.news = data; }
 function newsHTML() {
   const e = S.edit && S.edit.t === 'news' ? S.edit.row : null;
@@ -619,7 +653,8 @@ function newsHTML() {
     + '<label class="f">Aparece a partir de<input type="datetime-local" id="nw-start" value="' + toInput(e ? e.starts_at : new Date().toISOString()) + '"></label>'
     + '<label class="f">Sai do ar em (opcional)<input type="datetime-local" id="nw-end" value="' + toInput(e ? e.ends_at : null) + '"></label>'
     + '<label class="chk"><input type="checkbox" id="nw-pin"' + (e && e.pinned ? ' checked' : '') + '> Fixar no topo</label>'
-    + '<div class="f wide">Texto' + richBox('nw-body', e ? richFrom(e.body) : '', { ph: 'Escreva a notícia…' }) + '</div>'
+    + '<div class="f wide">Texto' + richBox('nw-body', e ? richFrom(trParse(e.body).base) : '', { ph: 'Escreva a notícia…' }) + '</div>'
+    + trBlock('nw', true, e ? trParse(e.body).o : null)
     + '</div><div class="row" style="margin-top:12px"><button class="btn go" data-act="nw-save">' + (e ? 'Salvar' : 'Publicar') + '</button>' + (e ? '<button class="btn" data-act="edit-cancel">Cancelar</button>' : '') + '</div></div>'
     + '<div class="card sec"><h2>Publicadas</h2>' + ((S.news || []).length ? S.news.map((n) => '<div class="list-item"><div class="t"><b>' + (n.pinned ? '📌 ' : '') + esc(n.title) + ' ' + status(n) + '</b><p>' + (n.tag ? esc(n.tag) + ' · ' : '') + dt(n.starts_at) + (n.ends_at ? ' até ' + dt(n.ends_at) : '') + '\n' + esc(newsPlain(n.body)).slice(0, 300) + '</p></div><button class="btn sm" data-act="nw-edit" data-v="' + n.id + '">Editar</button><button class="btn sm danger" data-act="nw-del" data-v="' + n.id + '">Apagar</button></div>').join('') : '<p class="muted">Nenhuma notícia ainda.</p>') + '</div>';
 }
@@ -652,6 +687,7 @@ function mailHTML() {
       : '<div class="f wide">E-mail do jogador<div class="row"><input type="email" id="ml-email" style="flex:1" value="' + esc(u ? u.email : '') + '"><button class="btn sm" data-act="mail-find">Procurar</button></div>' + (u ? '<span class="pill p-good">' + esc(u.email) + ' · nível ' + (u.level == null ? '—' : u.level) + ' · ' + nf(u.matches) + ' partidas</span>' : '') + '</div>')
     + '<label class="f wide">Título<input type="text" id="ml-title" maxlength="80" placeholder="Compensação da manutenção"></label>'
     + '<div class="f wide">Mensagem (opcional)' + richBox('ml-body', '', { ph: 'Mensagem que acompanha o prêmio…' }) + '</div>'
+    + trBlock('ml', true, null, { tmax: 80 })
     + '<label class="f">Ouro<input type="number" id="ml-gold" min="0" max="100000" value="0"></label>'
     + '<label class="f">Fragmentos<input type="number" id="ml-dust" min="0" max="100000" value="0"></label>'
     + '<label class="f">Pacotes de cartas<input type="number" id="ml-packs" min="0" max="50" value="0"></label>'
@@ -840,7 +876,7 @@ document.addEventListener('click', async (e) => {
       const n = (id, d, lo, hi) => Math.max(lo, Math.min(hi, Math.round(+val(id) || d)));
       if (await saveCfg('match', { turn: n('mt-turn', 25, 10, 120), eq: n('mt-eq', 10, 5, 60), vote: n('mt-vote', 10, 5, 60) })) { toast('Tempos salvos.'); S.fresh = true; render(); }
     } else if (act === 'ev-save') {
-      const row = { kind: val('ev-kind'), value: +val('ev-val'), title: val('ev-title'), body: val('ev-body'), starts_at: fromInput(val('ev-start')), ends_at: fromInput(val('ev-end')) };
+      const row = { kind: val('ev-kind'), value: +val('ev-val'), title: val('ev-title'), body: val('ev-body') + trMark(trCollect('ev', false)), starts_at: fromInput(val('ev-start')), ends_at: fromInput(val('ev-end')) };
       if (!row.title) return toast('Dê um título ao evento.', true);
       if (!row.ends_at || Date.parse(row.ends_at) <= Date.parse(row.starts_at)) return toast('O fim precisa ser depois do começo.', true);
       if (!(row.value >= 1.1 && row.value <= 5)) return toast('Multiplicador entre 1,1 e 5.', true);
@@ -849,13 +885,13 @@ document.addEventListener('click', async (e) => {
     } else if (act === 'ev-end') { const { error } = await sb.from('live_events').update({ ends_at: new Date().toISOString() }).eq('id', v); if (error) return fail(error); S.events = null; render(); }
     else if (act === 'ev-del') { if (!confirm('Apagar este evento?')) return; const { error } = await sb.from('live_events').delete().eq('id', v); if (error) return fail(error); S.events = null; render(); }
     else if (act === 'nw-save') {
-      const row = { title: val('nw-title'), tag: val('nw-tag') || null, body: richTo(richGet('nw-body')), pinned: checked('nw-pin'), starts_at: fromInput(val('nw-start')) || new Date().toISOString(), ends_at: fromInput(val('nw-end')) };
+      const row = { title: val('nw-title'), tag: val('nw-tag') || null, body: richTo(richGet('nw-body')) + trMark(trCollect('nw', true)), pinned: checked('nw-pin'), starts_at: fromInput(val('nw-start')) || new Date().toISOString(), ends_at: fromInput(val('nw-end')) };
       if (!row.title) return toast('Dê um título à notícia.', true);
       const q = S.edit && S.edit.t === 'news' ? sb.from('news').update(row).eq('id', S.edit.row.id) : sb.from('news').insert(row);
       const { error } = await q; if (error) return fail(error);
-      toast(S.edit ? 'Notícia salva.' : 'Notícia publicada.'); S.edit = null; S.news = null; S.fresh = true; delete S.rich['nw-body']; render();
-    } else if (act === 'nw-edit') { S.fresh = true; S.edit = { t: 'news', row: S.news.find((n) => String(n.id) === v) }; delete S.rich['nw-body']; render(); window.scrollTo(0, 0); }
-    else if (act === 'edit-cancel') { S.fresh = true; S.edit = null; delete S.rich['nw-body']; render(); }
+      toast(S.edit ? 'Notícia salva.' : 'Notícia publicada.'); S.edit = null; S.news = null; S.fresh = true; delete S.rich['nw-body']; trForget('nw'); render();
+    } else if (act === 'nw-edit') { S.fresh = true; S.edit = { t: 'news', row: S.news.find((n) => String(n.id) === v) }; delete S.rich['nw-body']; trForget('nw'); render(); window.scrollTo(0, 0); }
+    else if (act === 'edit-cancel') { S.fresh = true; S.edit = null; delete S.rich['nw-body']; trForget('nw'); render(); }
     else if (act === 'nw-del') { if (!confirm('Apagar esta notícia?')) return; const { error } = await sb.from('news').delete().eq('id', v); if (error) return fail(error); S.news = null; render(); }
     else if (act === 'mail-to') { S.mailTo = v; render(); }
     else if (act === 'mail-find' || act === 'pl-find') {
@@ -880,14 +916,14 @@ document.addEventListener('click', async (e) => {
       const gm = n('ml-gems', 100000), fp = n('ml-fpacks', 50), cp = n('ml-cpacks', 50), ep = n('ml-epacks', 50);
       if (gm) reward.gems = gm; if (fp) reward.fpacks = fp; if (cp) reward.cmdPacks = cp; if (ep) reward.eqPacks = ep;
       ['cards', 'cmds', 'eqs'].forEach((k) => { if (S.picks[k].length) reward[k] = S.picks[k].slice(); });
-      const row = { title: val('ml-title'), body: richTo(richGet('ml-body')), reward, expires_at: fromInput(val('ml-exp')) };
+      const row = { title: val('ml-title'), body: richTo(richGet('ml-body')) + trMark(trCollect('ml', true)), reward, expires_at: fromInput(val('ml-exp')) };
       if (!row.title) return toast('Dê um título ao prêmio.', true);
       if (!Object.keys(reward).length) return toast('Escolha pelo menos um item do prêmio.', true);
       if (S.mailTo === 'one') { if (!S.mailUser) return toast('Procure o jogador pelo e-mail primeiro.', true); row.target = S.mailUser.id; }
       else row.new_players = checked('ml-new');
       if (!confirm('Enviar “' + row.title + '” (' + rewardTxt(reward) + ') para ' + (row.target ? S.mailUser.email : 'todos os jogadores') + '?')) return;
       const { error } = await sb.from('mail').insert(row); if (error) return fail(error);
-      toast('Prêmio enviado.'); delete S.rich['ml-body']; S.picks = { cards: [], cmds: [], eqs: [] }; S.mail = null; S.fresh = true; render();
+      toast('Prêmio enviado.'); delete S.rich['ml-body']; trForget('ml'); S.picks = { cards: [], cmds: [], eqs: [] }; S.mail = null; S.fresh = true; render();
     } else if (act === 'mail-del') { if (!confirm('Apagar este prêmio? Quem ainda não resgatou não vai mais vê-lo.')) return; const { error } = await sb.from('mail').delete().eq('id', v); if (error) return fail(error); S.mail = null; render(); }
     else if (act === 'rel-use') {
       const r = Object.assign({}, S.cfg.release || {}, { bundle: +v, rollback: checked('rl-back') });
