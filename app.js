@@ -685,7 +685,7 @@ function mailHTML() {
     + '<div class="card"><h2>Novo prêmio</h2><div class="form">'
     + '<div class="f wide">Para quem<div class="seg"><button data-act="mail-to" data-v="all" class="' + (to === 'all' ? 'on' : '') + '">Todos os jogadores</button><button data-act="mail-to" data-v="one" class="' + (to === 'one' ? 'on' : '') + '">Um jogador</button></div></div>'
     + (to === 'all' ? '<label class="chk wide"><input type="checkbox" id="ml-new"> Incluir contas novas (criadas depois deste prêmio)</label>'
-      : '<div class="f wide">E-mail do jogador<div class="row"><input type="email" id="ml-email" style="flex:1" value="' + esc(u ? u.email : '') + '"><button class="btn sm" data-act="mail-find">Procurar</button></div>' + (u ? '<span class="pill p-good">' + esc(u.email) + ' · nível ' + (u.level == null ? '—' : u.level) + ' · ' + nf(u.matches) + ' partidas</span>' : '') + '</div>')
+      : '<div class="f wide">E-mail ou código do jogador<div class="row"><input type="text" id="ml-email" style="flex:1" value="' + esc(u ? u.email : '') + '"><button class="btn sm" data-act="mail-find">Procurar</button></div>' + (u ? '<span class="pill p-good">' + esc(u.email) + ' · nível ' + (u.level == null ? '—' : u.level) + ' · ' + nf(u.matches) + ' partidas</span>' : '') + '</div>')
     + '<label class="f wide">Título<input type="text" id="ml-title" maxlength="80" placeholder="Compensação da manutenção"></label>'
     + '<div class="f wide">Mensagem (opcional)' + richBox('ml-body', '', { ph: 'Mensagem que acompanha o prêmio…' }) + '</div>'
     + trBlock('ml', true, null, { tmax: 80 })
@@ -708,17 +708,21 @@ async function loadFeedback() {
   let q = sb.from('feedback').select('*').order('created_at', { ascending: false }).limit(200);
   if (S.fbSt && S.fbSt !== 'todos') q = q.eq('status', S.fbSt);
   const { data, error } = await q; if (error) throw error; S.fb = data || [];
+  // the players' names (username), for the list
+  const ids = Array.from(new Set(S.fb.map((f) => f.user_id).filter(Boolean)));
+  S.fbNames = S.fbNames || {};
+  if (ids.length) { const r = await sb.rpc('admin_names', { p_ids: ids }); if (!r.error && r.data) Object.assign(S.fbNames, r.data); }
 }
 function feedbackHTML() {
   const K = { sugestao: 'Sugestão', problema: 'Problema', outro: 'Outro' }, ST = { novo: 'Novo', visto: 'Visto', resolvido: 'Resolvido' };
   const cur = S.fbSt || 'novo';
-  return '<h1>Feedback</h1><p class="sub">Mensagens que os jogadores mandam pelo jogo (Configurações › Suporte › Enviar feedback ou sugestão). O UID é o mesmo que o jogador vê nas Configurações.</p>'
+  return '<h1>Feedback</h1><p class="sub">Mensagens que os jogadores mandam pelo jogo (Configurações › Suporte › Enviar feedback ou sugestão). O código de 8 caracteres é o mesmo que o jogador vê nas Configurações; procure a conta por ele em Jogador.</p>'
     + '<div class="row" style="gap:6px;margin-bottom:12px">' + ['novo', 'visto', 'resolvido', 'todos'].map((k) => '<button class="btn sm' + (cur === k ? ' go' : '') + '" data-act="fb-st" data-v="' + k + '">' + (ST[k] || 'Todos') + '</button>').join('') + '<button class="btn sm" data-act="fb-reload">Atualizar</button></div>'
     + ((S.fb || []).length ? S.fb.map((f) => '<div class="card fb-it"><div class="fb-h"><span class="pill ' + (f.kind === 'problema' ? 'p-bad' : f.kind === 'sugestao' ? 'p-good' : '') + '">' + (K[f.kind] || f.kind) + '</span>'
-        + '<b class="mono" title="' + esc(f.user_id) + '">' + esc(String(f.user_id).slice(0, 8).toUpperCase()) + '</b><span class="muted">' + dt(f.created_at) + ' · Beta ' + esc(f.ver || '?') + (f.build ? ' · ' + f.build : '') + (f.apk ? ' · APK ' + f.apk : '') + ' · ' + esc(f.lang || 'pt') + (f.lvl ? ' · nível ' + f.lvl : '') + '</span>'
+        + '<b>' + esc((S.fbNames || {})[f.user_id] || 'sem nome') + '</b><b class="mono" title="' + esc(f.user_id) + '">' + esc(String(f.user_id).slice(0, 8).toUpperCase()) + '</b><span class="muted">' + dt(f.created_at) + ' · Beta ' + esc(f.ver || '?') + (f.build ? ' · ' + f.build : '') + (f.apk ? ' · APK ' + f.apk : '') + ' · ' + esc(f.lang || 'pt') + (f.lvl ? ' · nível ' + f.lvl : '') + '</span>'
         + '<span class="pill">' + (ST[f.status] || f.status) + '</span></div>'
         + '<p class="fb-b">' + esc(f.body) + '</p>'
-        + '<div class="row" style="gap:6px"><button class="btn sm" data-act="fb-uid" data-v="' + esc(f.user_id) + '">Copiar UID</button>'
+        + '<div class="row" style="gap:6px"><button class="btn sm" data-act="fb-uid" data-v="' + esc(String(f.user_id).slice(0, 8).toUpperCase()) + '">Copiar código</button>'
         + (f.status !== 'visto' ? '<button class="btn sm" data-act="fb-set" data-v="' + f.id + ':visto">Marcar visto</button>' : '')
         + (f.status !== 'resolvido' ? '<button class="btn sm go" data-act="fb-set" data-v="' + f.id + ':resolvido">Resolvido</button>' : '') + '</div></div>').join('')
       : '<p class="muted">Nenhuma mensagem aqui.</p>');
@@ -750,10 +754,10 @@ function versionsHTML() {
 /* ---------- JOGADOR ---------- */
 function playerHTML() {
   const u = S.player;
-  return '<h1>Jogador</h1><p class="sub">Procure uma conta pelo e-mail para ver nível, saldos, partidas e o registro de tudo que ela ganhou e gastou.</p>'
-    + '<div class="card"><div class="row"><input type="email" id="pl-email" placeholder="email@exemplo.com" style="flex:1;max-width:420px" value="' + esc(u && u.email || '') + '"><button class="btn go" data-act="pl-find">Procurar</button></div>'
-    + (u === null ? '<p class="muted">Nenhuma conta com esse e-mail.</p>' : u ? '<div class="grid g4 sec">'
-      + [['Conta criada', dt(u.created_at)], ['Último login', dt(u.last_sign_in_at)], ['Nível', u.level == null ? '—' : u.level], ['Ouro', nf(u.gold)], ['Gemas', nf(u.gems)], ['Fragmentos', nf(u.dust)], ['Pacotes grátis', nf(u.packs)], ['Partidas', nf(u.matches)], ['Vitórias', nf(u.wins) + ' (' + pctTxt(pct(u.wins, u.matches)) + ')'], ['Última partida', dt(u.last_match)]]
+  return '<h1>Jogador</h1><p class="sub">Procure uma conta pelo e-mail ou pelo código de 8 caracteres que o jogador vê nas Configurações, para ver nível, saldos, partidas e o registro de tudo que ela ganhou e gastou.</p>'
+    + '<div class="card"><div class="row"><input type="text" id="pl-email" placeholder="e-mail ou código (ex.: 3FA85F64)" style="flex:1;max-width:420px" value="' + esc(u && (u.email || u.code) || '') + '"><button class="btn go" data-act="pl-find">Procurar</button></div>'
+    + (u === null ? '<p class="muted">Nenhuma conta com esse e-mail ou código.</p>' : u ? '<div class="grid g4 sec">'
+      + [['Nome', esc(u.name || '—')], ['Código', '<span class="mono">' + esc(u.code || String(u.id || '').slice(0, 8).toUpperCase()) + '</span>' + (u.same_code ? ' <small class="muted">(+' + u.same_code + ' com o mesmo código)</small>' : '')], ['E-mail', esc(u.email || '')], ['Conta criada', dt(u.created_at)], ['Último login', dt(u.last_sign_in_at)], ['Nível', u.level == null ? '—' : u.level], ['Ouro', nf(u.gold)], ['Gemas', nf(u.gems)], ['Fragmentos', nf(u.dust)], ['Pacotes grátis', nf(u.packs)], ['Partidas', nf(u.matches)], ['Vitórias', nf(u.wins) + ' (' + pctTxt(pct(u.wins, u.matches)) + ')'], ['Última partida', dt(u.last_match)]]
         .map(([k, v]) => '<div class="card kpi"><small>' + k + '</small><b style="font-size:18px">' + v + '</b></div>').join('') + '</div>'
       + (u.src === 'celular' ? '<p class="muted">Saldos do salvo antigo do celular (esta conta ainda não tem progresso no servidor).</p>' : '')
       + '<div class="row sec"><button class="btn" data-act="pl-mail">Mandar prêmio para este jogador</button></div>' : '') + '</div>'
@@ -843,7 +847,7 @@ document.addEventListener('click', async (e) => {
   try {
     if (act === 'fb-st') { S.fbSt = v; S.fb = null; render(); return; }
     if (act === 'fb-reload') { S.fb = null; render(); return; }
-    if (act === 'fb-uid') { try { await navigator.clipboard.writeText(v); toast('UID copiado.'); } catch (err) { toast(v); } return; }
+    if (act === 'fb-uid') { try { await navigator.clipboard.writeText(v); toast('Código copiado.'); } catch (err) { toast(v); } return; }
     if (act === 'fb-set') {
       const [id, st] = String(v).split(':');
       const { error } = await sb.from('feedback').update({ status: st }).eq('id', +id); if (error) throw error;
@@ -926,7 +930,7 @@ document.addEventListener('click', async (e) => {
     else if (act === 'mail-find' || act === 'pl-find') {
       const email = val(act === 'mail-find' ? 'ml-email' : 'pl-email'); if (!email) return;
       const { data, error } = await sb.rpc('admin_find_user', { p_email: email }); if (error) return fail(error);
-      if (act === 'mail-find') { S.mailUser = data; if (!data) toast('Nenhuma conta com esse e-mail.', true); } else { S.player = data; S.plog = null; S.plogF = 'all'; }
+      if (act === 'mail-find') { S.mailUser = data; if (!data) toast('Nenhuma conta com esse e-mail ou código.', true); } else { S.player = data; S.plog = null; S.plogF = 'all'; }
       render();
       if (act === 'pl-find' && data) { await loadPlog(false); render(); }
     } else if (act === 'plog-f') { S.plogF = v; render(); }
