@@ -746,7 +746,6 @@ function versionsHTML() {
     + '<div class="card sec"><h2>App (APK / Play Store)</h2><p class="muted" style="margin-top:-4px">Para obrigar todos a instalar um APK, coloque aqui o número dele (o mesmo de “APK mais novo” acima e de “Faction Duels (versão N)” nas Releases). Quem tem um APK com número menor vê a tela “Atualize o jogo”. 0 = ninguém é obrigado.</p><div class="form">'
     + '<label class="f">APK mínimo obrigatório (número)<input type="number" id="rl-min" min="0" max="' + (r.latest_build || 0) + '" value="' + (r.min_build || 0) + '"></label>'
     + '<label class="f wide">Link da Play Store<input type="url" id="rl-store" placeholder="https://play.google.com/store/apps/details?id=br.factionduels.app" value="' + esc(r.store_url || '') + '"></label>'
-    + '<label class="f wide">Link do APK (enquanto não estiver na Play Store)<input type="url" id="rl-apk" value="' + esc(r.apk_url || '') + '"></label>'
     + '<label class="f wide">Mensagem para quem precisa atualizar (opcional)<input type="text" id="rl-msg" maxlength="200" value="' + esc(r.message || '') + '"></label>'
     + '</div><button class="btn go" data-act="rel-save">Salvar</button></div>';
 }
@@ -970,8 +969,9 @@ document.addEventListener('click', async (e) => {
       // the number is the APK's build (min_build); the app's native version (min_native) stays with the APK workflow
       const cur = S.cfg.release || {}, minb = Math.max(0, Math.floor(+val('rl-min') || 0));
       if (minb > (+cur.latest_build || 0)) { toast('Não existe APK ' + minb + ': o mais novo é o ' + (cur.latest_build || '—') + '. Com esse número ninguém conseguiria jogar.', true); return; }
-      const r = Object.assign({}, cur, { min_build: minb, store_url: val('rl-store'), apk_url: val('rl-apk'), message: val('rl-msg'), rollback: checked('rl-back'), auto_force: checked('rl-auto'), auto_ota: checked('rl-ota') });
-      if (minb && !r.store_url && !r.apk_url && !confirm('Sem link, quem estiver com APK antigo fica travado sem saber onde atualizar. Salvar assim mesmo?')) return;
+      const r = Object.assign({}, cur, { min_build: minb, store_url: val('rl-store'), message: val('rl-msg'), rollback: checked('rl-back'), auto_force: checked('rl-auto'), auto_ota: checked('rl-ota') });
+      delete r.apk_url;   // the app only updates through the Play Store (never an APK link)
+      if (minb && !r.store_url && !confirm('Sem o link da Play Store, quem estiver com a versão antiga fica travado sem saber onde atualizar. Salvar assim mesmo?')) return;
       if (await saveCfg('release', r)) { toast('Salvo.'); render(); }
     }
   } catch (err) { fail(err); }
