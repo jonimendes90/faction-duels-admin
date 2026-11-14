@@ -60,13 +60,8 @@ function renderLogin(msg) {
   msg = msg || S.loginMsg; S.loginMsg = null;
   $('#main').innerHTML = '<div class="login card"><h1>Administração</h1>'
     + (msg ? '<div class="note">' + esc(msg) + '</div>' : '')
-    + '<label class="f">E-mail<input type="email" id="lg-email" autocomplete="email"></label>'
-    + '<label class="f">Senha<input type="password" id="lg-pass" autocomplete="current-password"></label>'
-    + '<button class="btn go" data-act="login">Entrar</button>'
-    + '<div class="or">ou</div>'
-    + '<button class="btn" data-act="login-google">Entrar com Google</button>'
-    + '<button class="btn" data-act="login-link">Receber link de acesso por e-mail</button>'
-    + '<p class="muted" style="font-size:12px">Use a mesma conta do jogo. Só contas marcadas como administradoras no banco conseguem ver alguma coisa aqui.</p></div>';
+    + '<button class="btn go" data-act="login-google">Entrar com Google</button>'
+    + '<p class="muted" style="font-size:12px">Só a conta Google de administrador entra. Qualquer outra conta vê “Sem acesso”.</p></div>';
 }
 // always the folder address (…/faction-duels-admin/), the one allowed in Supabase → Redirect URLs
 const here = () => location.origin + location.pathname.replace(/index\.html$/, '');
@@ -112,7 +107,7 @@ async function render() {
     else if (S.tab === 'news') { if (!S.news) await loadNews(); m.innerHTML = newsHTML(); }
     else if (S.tab === 'mail') { if (!S.mail) await loadMail(); m.innerHTML = mailHTML(); }
     else if (S.tab === 'versions') { if (!S.releases) await loadReleases(); m.innerHTML = versionsHTML(); }
-    else if (S.tab === 'player') m.innerHTML = playerHTML();
+    else if (S.tab === 'player') { if (!S.player && !S.pl.data) { m.innerHTML = '<p class="muted pad">Carregando…</p>'; await loadPlayers(); } m.innerHTML = playerHTML(); }
     else if (S.tab === 'feedback') { if (!S.fb) { m.innerHTML = '<p class="muted pad">Carregando…</p>'; await loadFeedback(); } m.innerHTML = feedbackHTML(); }
     else if (S.tab === 'econ') { if (!S.econ) { m.innerHTML = '<p class="muted pad">Carregando…</p>'; await loadEcon(); } m.innerHTML = econHTML(); }
     if (keep) restoreForm(keep);
@@ -510,8 +505,8 @@ function econHTML() {
     + '<p>' + ((s.testers || []).length ? (s.testers || []).map((e) => '<span class="pill">' + esc(e) + '</span>').join(' ') : '<span class="muted">Nenhuma conta de teste.</span>') + '</p></div>'
     + '<div class="card sec"><h2>Replay de partidas</h2><p class="muted">Partidas online guardadas no servidor. Deixe o e-mail em branco para ver as de todas as contas.</p>'
     + '<div class="row"><input type="email" id="rp-email" placeholder="e-mail da conta (opcional)" style="flex:1"><button class="btn sm go" data-act="rp-find">Buscar</button></div>'
-    + (S.rpList ? (S.rpList.length ? '<table class="sec"><thead><tr><th>Quando</th><th>Conta</th><th>Resultado</th><th>Jogadas</th><th></th></tr></thead><tbody>'
-      + S.rpList.map((m) => '<tr><td>' + dt(m.created_at) + '</td><td>' + esc(m.email) + '</td><td>' + rpRes(m) + '</td><td>' + nf(m.moves) + '</td><td><button class="btn sm" data-act="rp-open" data-v="' + m.id + '">Ver replay</button></td></tr>').join('') + '</tbody></table>'
+    + (S.rpList ? (S.rpList.length ? '<table class="sec"><thead><tr><th>Quando</th><th>Conta</th><th>Tipo</th><th>Resultado</th><th>Jogadas</th><th></th></tr></thead><tbody>'
+      + S.rpList.map((m) => '<tr><td>' + dt(m.created_at) + '</td><td>' + esc(m.email) + '</td><td>' + (m.kind ? matchPill(m.kind) : '—') + '</td><td>' + rpRes(m) + '</td><td>' + nf(m.moves) + '</td><td><button class="btn sm" data-act="rp-open" data-v="' + m.id + '">Ver replay</button></td></tr>').join('') + '</tbody></table>'
       : '<p class="muted sec">Nenhuma partida encontrada.</p>') : '') + '</div>'
     + '<div class="card sec"><h2>Partidas recusadas e abandonadas (' + (S.days || 7) + ' dias)</h2>'
     + (L.length ? '<table><thead><tr><th>Quando</th><th>Conta</th><th>Situação</th><th>Motivo</th><th>Bot</th><th>Jogadas</th></tr></thead><tbody>'
@@ -617,7 +612,10 @@ function rpDraw() {
   o.innerHTML = '<div class="rp-box">' + top + '<div class="rp-stage">' + table + '</div>' + ctr + '</div>' + zoom;
 }
 document.addEventListener('input', (e) => { if (e.target && e.target.id === 'rp-seek' && S.rp) { if (S.rp.t) clearTimeout(S.rp.t); S.rp.k = +e.target.value; rpDraw(); const el = document.getElementById('rp-seek'); if (el) el.focus(); } });
-document.addEventListener('change', (e) => { if (e.target && e.target.id === 'rp-seek' && S.rp && S.rp.playing) rpTick(); });
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'rp-seek' && S.rp && S.rp.playing) rpTick();
+  if (e.target && e.target.id === 'pl-size') { S.pl.size = +e.target.value || 100; S.pl.page = 0; loadPlayers().then(render).catch(fail); }
+});
 
 /* ---------- EVENTOS ---------- */
 async function loadEvents() { const { data, error } = await sb.from('live_events').select('*').order('starts_at', { ascending: false }).limit(100); if (error) throw error; S.events = data; }
@@ -753,14 +751,121 @@ function versionsHTML() {
 /* ---------- JOGADOR ---------- */
 function playerHTML() {
   const u = S.player;
-  return '<h1>Jogador</h1><p class="sub">Procure uma conta pelo e-mail ou pelo código de 8 caracteres que o jogador vê nas Configurações, para ver nível, saldos, partidas e o registro de tudo que ela ganhou e gastou.</p>'
+  if (!u) return playersHTML();
+  return '<div class="row"><button class="btn" data-act="pl-back">← Todos os jogadores</button></div><h1>Jogador</h1><p class="sub">Procure uma conta pelo e-mail ou pelo código de 8 caracteres que o jogador vê nas Configurações, para ver nível, saldos, partidas e o registro de tudo que ela ganhou e gastou.</p>'
     + '<div class="card"><div class="row"><input type="text" id="pl-email" placeholder="e-mail ou código (ex.: 3FA85F64)" style="flex:1;max-width:420px" value="' + esc(u && (u.email || u.code) || '') + '"><button class="btn go" data-act="pl-find">Procurar</button></div>'
     + (u === null ? '<p class="muted">Nenhuma conta com esse e-mail ou código.</p>' : u ? '<div class="grid g4 sec">'
       + [['Nome', esc(u.name || '—')], ['Código', '<span class="mono">' + esc(u.code || String(u.id || '').slice(0, 8).toUpperCase()) + '</span>' + (u.same_code ? ' <small class="muted">(+' + u.same_code + ' com o mesmo código)</small>' : '')], ['E-mail', esc(u.email || '')], ['Conta criada', dt(u.created_at)], ['Último login', dt(u.last_sign_in_at)], ['Nível', u.level == null ? '—' : u.level], ['Ouro', nf(u.gold)], ['Gemas', nf(u.gems)], ['Fragmentos', nf(u.dust)], ['Pacotes grátis', nf(u.packs)], ['Partidas', nf(u.matches)], ['Vitórias', nf(u.wins) + ' (' + pctTxt(pct(u.wins, u.matches)) + ')'], ['Última partida', dt(u.last_match)]]
         .map(([k, v]) => '<div class="card kpi"><small>' + k + '</small><b style="font-size:18px">' + v + '</b></div>').join('') + '</div>'
       + (u.src === 'celular' ? '<p class="muted">Saldos do salvo antigo do celular (esta conta ainda não tem progresso no servidor).</p>' : '')
       + '<div class="row sec"><button class="btn" data-act="pl-mail">Mandar prêmio para este jogador</button></div>' : '') + '</div>'
-    + (u ? plogHTML() : '');
+    + (u ? actHTML() + plogHTML() : '');
+}
+
+/* ---------- Beta 1.85: todos os jogadores (filtros, ordenação, páginas) ---------- */
+S.pl = { q: '', f: {}, sort: 'created_at', desc: true, size: 100, page: 0, data: null };
+const PL_COLS = [['name', 'Nome'], ['code', 'Código'], ['email', 'E-mail'], ['lvl', 'Nível', 1], ['matches', 'Partidas', 1], ['wins', 'Vitórias', 1], ['winp', '% vit.', 1],
+  ['gold', 'Ouro', 1], ['gems', 'Gemas', 1], ['dust', 'Fragm.', 1], ['packs', 'Pacotes', 1], ['buys', 'Compras R$', 1], ['created_at', 'Conta criada'], ['last_sign_in_at', 'Último login'], ['last_match', 'Última partida'], ['tester', 'Teste']];
+const PL_F = [['lvl_min', 'Nível mín.', 'number'], ['lvl_max', 'Nível máx.', 'number'], ['matches_min', 'Partidas mín.', 'number'], ['matches_max', 'Partidas máx.', 'number'],
+  ['gold_min', 'Ouro mín.', 'number'], ['gems_min', 'Gemas mín.', 'number'], ['created_from', 'Criada de', 'date'], ['created_to', 'Criada até', 'date'],
+  ['login_from', 'Login de', 'date'], ['login_to', 'Login até', 'date']];
+async function loadPlayers() {
+  const P = S.pl;
+  const { data, error } = await sb.rpc('admin_players', { p_q: P.q, p_f: P.f, p_sort: P.sort, p_desc: P.desc, p_limit: P.size, p_offset: P.page * P.size });
+  if (error) { if (/could not find the function/i.test(error.message || '')) { P.data = { missing: true, total: 0, rows: [] }; return; } throw error; }
+  P.data = data || { total: 0, rows: [] };
+}
+function playersHTML() {
+  const P = S.pl, D = P.data || { total: 0, rows: [] }, f = P.f;
+  const sel = (id, opts) => '<select id="' + id + '">' + opts.map(([v, t]) => '<option value="' + v + '"' + (String(f[id.slice(3)] || '') === v ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
+  const cell = (r, k) => {
+    const v = r[k];
+    if (k === 'name') return '<td><b>' + esc(v || '—') + '</b></td>';
+    if (k === 'code') return '<td class="mono">' + esc(v) + '</td>';
+    if (k === 'email') return '<td>' + esc(v || '—') + '</td>';
+    if (k === 'winp') return '<td class="num">' + (v == null ? '—' : pctTxt(+v)) + '</td>';
+    if (k === 'tester') return '<td>' + (v ? '<span class="pill p-gold">teste</span>' : '') + '</td>';
+    if (/_at$|last_match/.test(k)) return '<td style="white-space:nowrap">' + dt(v) + '</td>';
+    return '<td class="num">' + nf(v) + '</td>';
+  };
+  const from = D.total ? P.page * P.size + 1 : 0, to = Math.min(D.total, (P.page + 1) * P.size), pages = Math.max(1, Math.ceil(D.total / P.size));
+  const nav = '<div class="row" style="justify-content:space-between"><span class="muted">' + nf(from) + '–' + nf(to) + ' de ' + nf(D.total) + ' jogadores</span><span class="row">'
+    + '<label class="muted">Por página <select id="pl-size">' + [100, 150, 200].map((n) => '<option' + (n === P.size ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></label>'
+    + '<button class="btn sm" data-act="pl-page" data-v="-1"' + (P.page ? '' : ' disabled') + '>← Anterior</button><span class="muted">página ' + (P.page + 1) + ' de ' + pages + '</span>'
+    + '<button class="btn sm" data-act="pl-page" data-v="1"' + (P.page + 1 < pages ? '' : ' disabled') + '>Próxima →</button></span></div>';
+  return '<h1>Jogadores</h1><p class="sub">Todas as contas reais cadastradas no jogo (bots não têm conta). Clique num jogador para ver os detalhes, as partidas e o registro de tudo que ele fez.</p>'
+    + (D.missing ? '<div class="card"><p>A lista ainda não está no servidor: espere a publicação do jogo (GitHub → Actions → “Servidor do jogo”) e recarregue.</p></div>' : '')
+    + '<div class="card"><div class="row"><input type="text" id="pl-q" placeholder="nome, e-mail ou código" style="flex:1;max-width:360px" value="' + esc(P.q) + '">'
+    + '<button class="btn go" data-act="pl-apply">Filtrar</button><button class="btn" data-act="pl-clear">Limpar filtros</button></div>'
+    + '<div class="grid g4 sec">' + PL_F.map(([k, t, type]) => '<label class="f">' + t + '<input type="' + type + '" id="pf-' + k + '" value="' + esc(f[k] || '') + '"></label>').join('')
+    + '<label class="f">Jogou nos últimos' + sel('pf-played_days', [['', 'qualquer'], ['1', '1 dia'], ['7', '7 dias'], ['30', '30 dias']]) + '</label>'
+    + '<label class="f">Comprou com dinheiro real' + sel('pf-buyers', [['', 'todos'], ['sim', 'só quem comprou']]) + '</label>'
+    + '<label class="f">Conta de teste' + sel('pf-tester', [['', 'todas'], ['sim', 'só de teste'], ['nao', 'sem as de teste']]) + '</label>'
+    + '<label class="f">Progresso no servidor' + sel('pf-progress', [['', 'todas'], ['sim', 'só com progresso']]) + '</label></div></div>'
+    + '<div class="card sec">' + nav + '<div class="tbl-wrap sec"><table class="pl-tbl"><thead><tr>'
+    + PL_COLS.map(([k, t, num]) => '<th class="sortable' + (num ? ' num' : '') + (P.sort === k ? ' on' : '') + '" data-act="pl-sort" data-v="' + k + '">' + t + (P.sort === k ? (P.desc ? ' ▼' : ' ▲') : '') + '</th>').join('')
+    + '</tr></thead><tbody>' + (D.rows.length ? D.rows.map((r) => '<tr class="click" data-act="pl-open" data-v="' + esc(r.email || r.code) + '">' + PL_COLS.map(([k]) => cell(r, k)).join('') + '</tr>').join('')
+      : '<tr><td colspan="' + PL_COLS.length + '" class="muted">Nenhum jogador com esses filtros.</td></tr>')
+    + '</tbody></table></div>' + nav + '</div>';
+}
+function plReadFilters() {
+  const P = S.pl, f = {};
+  PL_F.forEach(([k]) => { const v = val('pf-' + k); if (v !== '') f[k] = v; });
+  ['played_days', 'buyers', 'tester', 'progress'].forEach((k) => { const v = val('pf-' + k); if (v) f[k] = v; });
+  P.q = val('pl-q'); P.f = f; P.page = 0;
+}
+
+/* ---------- Beta 1.85: registro completo de atividades da conta ---------- */
+const ACT_KIND = { acesso: ['Acesso', 'p-gold'], partida: ['Partida', 'p-good'], economia: ['Economia', ''], acao: ['Ação', ''], feedback: ['Feedback', 'p-bad'] };
+const MATCH_KIND = { online: 'Online (bot)', pvp: 'Online (pessoa)', draft: 'Draft', trilha: 'Trilha', cla: 'Clã (chefe)', evento: 'Desafio', treino: 'Treino' };
+const ACC_OPS = { login: 'Entrou na conta', logout: 'Saiu da conta', user_signedup: 'Criou a conta', conta_criada: 'Conta criada', user_recovery_requested: 'Pediu troca de senha',
+  user_updated_password: 'Trocou a senha', user_modified: 'Mudou os dados da conta' };
+const ACT_OPS = { deck: 'Salvou o deck', setDeck: 'Salvou o deck', cosEquip: 'Equipou visual', emoEquip: 'Equipou emojis', newsSeen: 'Leu as notícias', name: 'Mudou o nome', avatar: 'Mudou o avatar',
+  clView: 'Abriu o clã', clCreate: 'Criou um clã', clJoin: 'Entrou num clã', clLeave: 'Saiu do clã', drStart: 'Começou um Draft', drPick: 'Escolheu carta do Draft', drEnd: 'Encerrou o Draft',
+  trStart: 'Começou etapa da Trilha', mOpen: 'Abriu partida', mCancel: 'Cancelou a busca', feedback: 'Mandou feedback' };
+const matchPill = (k) => '<span class="pill mk-' + esc(k) + '">' + esc(MATCH_KIND[k] || k) + '</span>';
+async function loadAct(more) {
+  const u = S.player; if (!u || !u.id) return;
+  const before = more && S.act && S.act.length ? S.act[S.act.length - 1].at : null;
+  const kinds = S.actF && S.actF !== 'all' ? [S.actF] : null;
+  const { data, error } = await sb.rpc('admin_activity', { p_uid: u.id, p_limit: 300, p_before: before, p_kinds: kinds });
+  if (error) { if (/could not find the function/i.test(error.message || '')) { S.act = []; S.actMissing = true; return; } throw error; }
+  const list = data || [];
+  S.act = more ? (S.act || []).concat(list) : list; S.actMore = list.length === 300;
+}
+function actRowHTML(r) {
+  const d = r.data || {}, K = ACT_KIND[r.kind] || [r.kind, ''];
+  let what = '', det = '';
+  if (r.kind === 'acesso') { what = ACC_OPS[r.op] || r.op; det = [d.provider ? 'por ' + esc(d.provider) : '', d.ip ? 'IP ' + esc(d.ip) : ''].filter(Boolean).join(' · '); }
+  else if (r.kind === 'partida') {
+    what = matchPill(r.op);
+    const x = d.result || {};
+    det = (d.status === 'done' ? (x.sign === 1 ? '<b style="color:var(--good, #63d68a)">Vitória</b>' : x.sign === -1 ? '<b style="color:var(--bad)">Derrota</b>' : 'Empate') : d.status === 'open' ? 'em andamento / não terminou' : esc(d.status) + (d.why ? ' · ' + esc(d.why) : ''))
+      + (x.gold ? ' · +' + nf(x.gold) + ' ouro' : '') + (x.xp ? ' · +' + nf(x.xp) + ' XP' : '') + (x.round ? ' · rodada ' + x.round : '')
+      + (d.foe && d.foe.name ? ' · contra ' + esc(d.foe.name) : r.op !== 'pvp' && d.bot ? ' · bot #' + d.bot : '')
+      + (d.tr && d.tr.fac ? ' · ' + esc(FAC[d.tr.fac] || d.tr.fac) + ' etapa ' + esc(d.tr.s) : '') + (d.dr && d.dr.s ? ' · partida ' + esc(d.dr.s) + ' do Draft' : '') + (d.cb ? ' · chefe ' + esc(d.cb.slot) + ' nível ' + esc(d.cb.lvl) : '')
+      + (d.id && d.moves ? ' <button class="btn sm" data-act="rp-open" data-v="' + d.id + '">Replay</button>' : '');
+  } else if (r.kind === 'economia') {
+    what = PLOG_OPS[r.op] || r.op;
+    const dl = d.delta || {};
+    det = plogDetail({ op: r.op, what: d.what, items: d.items, delta: dl })
+      + Object.keys(dl).filter((k) => Array.isArray(dl[k])).map((k) => { const x = dl[k][1] - dl[k][0]; return ' <span class="pill">' + (x > 0 ? '+' : '−') + nf(Math.abs(x)) + ' ' + esc(({ gold: 'ouro', gems: 'gemas', dust: 'fragm.', soul: 'alma' })[k] || k) + '</span>'; }).join('');
+  } else if (r.kind === 'acao') { what = ACT_OPS[r.op] || PLOG_OPS[r.op] || r.op; det = d.err ? '<span style="color:var(--bad)">recusado: ' + esc(d.err) + '</span>' : ''; }
+  else if (r.kind === 'feedback') { what = 'Feedback (' + esc(r.op) + ')'; det = esc(d.body || '') + (d.ver ? ' <small class="muted">· ' + esc(d.ver) + '</small>' : ''); }
+  return '<tr><td style="white-space:nowrap">' + dt(r.at) + '</td><td><span class="pill ' + K[1] + '">' + K[0] + '</span></td><td>' + what + '</td><td style="max-width:520px">' + (det || '<span class="muted">—</span>') + '</td></tr>';
+}
+function actHTML() {
+  const F = [['all', 'Tudo'], ['acesso', 'Acessos'], ['partida', 'Partidas'], ['economia', 'Economia'], ['acao', 'Ações'], ['feedback', 'Feedback']];
+  const L = S.act;
+  return '<div class="card sec"><h2>Registro de atividades</h2>'
+    + '<p class="muted" style="margin-top:0">Tudo o que a conta fez, do mais novo para o mais antigo: acessos, partidas (com o tipo), ganhos e gastos, outras ações e feedback. O Treino contra a IA é jogado só no celular e não aparece aqui.</p>'
+    + '<div class="row">' + F.map(([k, t]) => '<button class="btn' + ((S.actF || 'all') === k ? ' go' : '') + '" data-act="act-f" data-v="' + k + '">' + t + '</button>').join('') + '</div>'
+    + (S.actMissing ? '<p class="muted sec">O registro ainda não está no servidor: espere a publicação do jogo e recarregue.</p>'
+      : !L ? '<p class="muted sec">Carregando…</p>'
+      : '<div class="tbl-wrap sec"><table><thead><tr><th>Quando</th><th>Tipo</th><th>O que</th><th>Detalhe</th></tr></thead><tbody>'
+        + (L.length ? L.map(actRowHTML).join('') : '<tr><td colspan="4" class="muted">Nada registrado' + ((S.actF || 'all') !== 'all' ? ' com este filtro' : '') + '.</td></tr>') + '</tbody></table></div>'
+        + (S.actMore ? '<div class="row sec"><button class="btn" data-act="act-more">Carregar mais antigos</button></div>' : ''))
+    + '</div>';
 }
 
 /* ---------- registro de economia (Beta 1.46): o que a conta ganhou e gastou, com o saldo antes e depois ---------- */
@@ -852,15 +957,8 @@ document.addEventListener('click', async (e) => {
       const { error } = await sb.from('feedback').update({ status: st }).eq('id', +id); if (error) throw error;
       S.fb = null; toast('Marcado como ' + st + '.'); render(); return;
     }
-    if (act === 'login') {
-      const { error } = await sb.auth.signInWithPassword({ email: val('lg-email'), password: (document.getElementById('lg-pass') || {}).value || '' });
-      if (error) renderLogin(/invalid/i.test(error.message) ? 'E-mail ou senha incorretos. Se você entra no jogo pelo Google, use “Entrar com Google”.' : error.message);
-    } else if (act === 'login-google') {
+    if (act === 'login-google') {
       await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: here() } });
-    } else if (act === 'login-link') {
-      const email = val('lg-email'); if (!email) return renderLogin('Digite o e-mail primeiro.');
-      const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: here(), shouldCreateUser: false } });
-      renderLogin(error ? error.message : 'Enviamos um link para ' + email + '. Abra neste computador.');
     } else if (act === 'logout') { await sb.auth.signOut(); location.hash = ''; }
     else if (act === 'days') { S.days = +v; S.stats = null; S.bots = null; render(); }
     else if (act === 'reload-stats') { S.stats = null; render(); }
@@ -929,10 +1027,23 @@ document.addEventListener('click', async (e) => {
     else if (act === 'mail-find' || act === 'pl-find') {
       const email = val(act === 'mail-find' ? 'ml-email' : 'pl-email'); if (!email) return;
       const { data, error } = await sb.rpc('admin_find_user', { p_email: email }); if (error) return fail(error);
-      if (act === 'mail-find') { S.mailUser = data; if (!data) toast('Nenhuma conta com esse e-mail ou código.', true); } else { S.player = data; S.plog = null; S.plogF = 'all'; }
+      if (act === 'mail-find') { S.mailUser = data; if (!data) toast('Nenhuma conta com esse e-mail ou código.', true); } else { if (!data) { toast('Nenhuma conta com esse e-mail ou código.', true); return; } S.player = data; S.plog = null; S.plogF = 'all'; S.act = null; S.actF = 'all'; S.actMissing = false; }
       render();
-      if (act === 'pl-find' && data) { await loadPlog(false); render(); }
+      if (act === 'pl-find' && data) { await Promise.all([loadPlog(false), loadAct(false)]); render(); }
     } else if (act === 'plog-f') { S.plogF = v; render(); }
+    else if (act === 'pl-back') { S.player = null; S.fresh = true; render(); }
+    else if (act === 'pl-open') {
+      const { data, error } = await sb.rpc('admin_find_user', { p_email: v }); if (error) return fail(error);
+      if (!data) { toast('Conta não encontrada.', true); return; }
+      S.player = data; S.plog = null; S.plogF = 'all'; S.act = null; S.actF = 'all'; S.actMissing = false; S.fresh = true; render(); window.scrollTo(0, 0);
+      await Promise.all([loadPlog(false), loadAct(false)]); render();
+    }
+    else if (act === 'pl-apply') { plReadFilters(); S.fresh = true; await loadPlayers(); render(); }
+    else if (act === 'pl-clear') { S.pl.q = ''; S.pl.f = {}; S.pl.page = 0; S.fresh = true; await loadPlayers(); render(); }
+    else if (act === 'pl-sort') { const P = S.pl; if (P.sort === v) P.desc = !P.desc; else { P.sort = v; P.desc = !/^(name|email|code)$/.test(v); } P.page = 0; await loadPlayers(); render(); }
+    else if (act === 'pl-page') { S.pl.page = Math.max(0, S.pl.page + (+v)); await loadPlayers(); render(); window.scrollTo(0, 0); }
+    else if (act === 'act-f') { S.actF = v; S.act = null; render(); await loadAct(false); render(); }
+    else if (act === 'act-more') { await loadAct(true); render(); }
     else if (act === 'plog-more') { await loadPlog(true); render(); }
     else if (act === 'pl-mail') { S.mailTo = 'one'; S.mailUser = S.player; go('mail'); }
     else if (act === 'pick-add') {
@@ -1003,8 +1114,8 @@ document.addEventListener('input', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
-  if (e.target.id === 'lg-pass' || e.target.id === 'lg-email') document.querySelector('[data-act=login]').click();
   if (e.target.id === 'pl-email') document.querySelector('[data-act=pl-find]').click();
+  if (e.target.id === 'pl-q' || (e.target.id || '').indexOf('pf-') === 0) { const b = document.querySelector('[data-act=pl-apply]'); if (b) b.click(); }
   if (e.target.id === 'ml-email') document.querySelector('[data-act=mail-find]').click();
   if (e.target.id && e.target.id.indexOf('pk-') === 0) { e.preventDefault(); document.querySelector('[data-act=pick-add][data-v=' + e.target.id.slice(3) + ']').click(); }
 });

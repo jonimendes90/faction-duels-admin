@@ -211,3 +211,16 @@ button.rpc { font: inherit; color: inherit; text-align: left; cursor: pointer; w
 .fb-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
 .fb-b { white-space: pre-wrap; margin: 6px 0 10px; line-height: 1.45; }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+/* Beta 1.85: lista de jogadores e registro de atividades */
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover, th.sortable.on { color: var(--gold, #f2c45a); }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: rgba(242,196,90,.07); }
+.pl-tbl td, .pl-tbl th { font-size: 12.5px; padding: 6px 8px; }
+.pill.mk-online { background: rgba(90,162,255,.18); color: #9cc6ff; }
+.pill.mk-pvp { background: rgba(99,214,138,.18); color: #8fe6ad; }
+.pill.mk-draft { background: rgba(183,124,255,.2); color: #d2b3ff; }
+.pill.mk-trilha { background: rgba(242,196,90,.2); color: #f2d48a; }
+.pill.mk-cla { background: rgba(255,120,90,.2); color: #ffb3a1; }
+.pill.mk-evento { background: rgba(255,207,77,.2); color: #ffe08a; }
