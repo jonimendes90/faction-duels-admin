@@ -503,6 +503,9 @@ function econHTML() {
     + '<div class="card sec"><h2>Contas de teste</h2><p class="muted">Podem usar “todas as cartas” e, no passe, a compra simulada.</p>'
     + '<div class="row"><input type="email" id="ec-email" placeholder="e-mail da conta" style="flex:1"><button class="btn sm go" data-act="econ-tester" data-v="1">Marcar</button><button class="btn sm" data-act="econ-tester" data-v="0">Desmarcar</button></div>'
     + '<p>' + ((s.testers || []).length ? (s.testers || []).map((e) => '<span class="pill">' + esc(e) + '</span>').join(' ') : '<span class="muted">Nenhuma conta de teste.</span>') + '</p></div>'
+    + '<div class="card sec"><h2>Pareamento livre (teste de PvP)</h2><p class="muted">Estas contas se encontram no PvP com qualquer jogador, sem olhar o rating. Use só para testar com dois celulares de níveis diferentes.</p>'
+    + '<div class="row"><input type="email" id="pvpf-email" placeholder="e-mail da conta" style="flex:1"><button class="btn sm go" data-act="pvp-free" data-v="1">Liberar</button><button class="btn sm" data-act="pvp-free" data-v="0">Tirar</button></div>'
+    + '<p>' + ((s.pvp_free || []).length ? (s.pvp_free || []).map((e) => '<span class="pill">' + esc(e) + '</span>').join(' ') : '<span class="muted">Nenhuma conta com pareamento livre.</span>') + '</p></div>'
     + '<div class="card sec"><h2>Replay de partidas</h2><p class="muted">Partidas online guardadas no servidor. Deixe o e-mail em branco para ver as de todas as contas.</p>'
     + '<div class="row"><input type="email" id="rp-email" placeholder="e-mail da conta (opcional)" style="flex:1"><button class="btn sm go" data-act="rp-find">Buscar</button></div>'
     + (S.rpList ? (S.rpList.length ? '<table class="sec"><thead><tr><th>Quando</th><th>Conta</th><th>Tipo</th><th>Resultado</th><th>Jogadas</th><th></th></tr></thead><tbody>'
@@ -573,7 +576,7 @@ function rpDraw() {
   if (!o) { o = document.createElement('div'); o.id = 'rp'; o.className = 'rp-ov'; document.body.appendChild(o); }
   const R = S.rp, D = R.data;
   const top = '<div class="rp-top"><b>Replay</b>' + (D ? '<span class="muted">' + esc(D.nick) + ' · ' + dt(D.at) + '</span>' : '') + (D && D.raw ? '<button class="btn sm" data-act="rp-raw">Copiar dados</button>' : '') + '<button class="btn sm" data-act="rp-exit">Sair</button></div>';
-  if (R.loading || R.err || !D) { o.innerHTML = '<div class="rp-box">' + top + '<p class="muted pad">' + (R.loading ? 'Preparando o replay…' : R.err === 'versao' ? 'Partida de uma versão antiga: o servidor não guarda mais essas regras.' : 'Não deu para abrir o replay: ' + esc(R.err)) + '</p></div>'; return; }
+  if (R.loading || R.err || !D) { o.innerHTML = '<div class="rp-box">' + top + '<p class="muted pad">' + (R.loading ? 'Preparando o replay…' : R.err === 'versao' ? 'Partida de uma versão antiga: o servidor não guarda mais essas regras.' : R.err === 'arquivada' ? 'Partida arquivada (mais de 60 dias): o jogo a jogo saiu do banco e está no armazenamento, bucket "arquivo" (pasta partidas/).' : 'Não deu para abrir o replay: ' + esc(R.err)) + '</p></div>'; return; }
   const St = D.steps, k = Math.max(0, Math.min(St.length - 1, R.k)), st = St[k], max = (D.head.hp && D.head.hp[0]) || 30;
   let ph = st.p ? st.p.hand.slice() : [], ah = st.a ? st.a.hand.slice() : [], L = null, Rr = null, cap = '', aiIdx = -1, extra = '';
   const atkA = st.ai && st.att === 'a' && !st.sudden ? st.ai : null;
@@ -996,6 +999,11 @@ document.addEventListener('click', async (e) => {
       const on = !(S.cfg.econ && S.cfg.econ.on);
       if (on && !confirm('Ligar a economia no servidor? Confirme que a função game já foi publicada.')) return;
       if (await saveCfg('econ', { on })) { toast(on ? 'Economia no servidor ligada. Vale quando o jogador abrir o app.' : 'Economia no servidor desligada.'); render(); }
+    } else if (act === 'pvp-free') {
+      const email = val('pvpf-email'); if (!email) return toast('Digite o e-mail.', true);
+      const { data, error } = await sb.rpc('admin_set_pvp_free', { p_email: email, p_on: v === '1' }); if (error) return fail(error);
+      if (!data) return toast('Nenhuma conta com esse e-mail no jogo.', true);
+      toast(v === '1' ? 'Pareamento livre ligado para essa conta.' : 'Pareamento livre tirado.'); S.econ = null; render();
     } else if (act === 'econ-tester') {
       const email = val('ec-email'); if (!email) return toast('Digite o e-mail.', true);
       const { data, error } = await sb.rpc('admin_set_tester', { p_email: email, p_on: v === '1' }); if (error) return fail(error);
