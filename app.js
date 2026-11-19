@@ -728,16 +728,30 @@ function feedbackHTML() {
         + (f.status !== 'resolvido' ? '<button class="btn sm go" data-act="fb-set" data-v="' + f.id + ':resolvido">Resolvido</button>' : '') + '</div></div>').join('')
       : '<p class="muted">Nenhuma mensagem aqui.</p>');
 }
-async function loadReleases() { const { data, error } = await sb.from('releases').select('build,label,commit_sha,native,size_kb,created_at').order('build', { ascending: false }).limit(60); if (error) throw error; S.releases = data; }
+async function loadReleases() {
+  const { data, error } = await sb.from('releases').select('build,label,commit_sha,native,size_kb,created_at').order('build', { ascending: false }).limit(60); if (error) throw error; S.releases = data;
+  // 2.02: the patch notes of each version (only the admin reads them)
+  S.relNotes = {};
+  const { data: nt } = await sb.from('release_notes').select('build,notes,edited').in('build', data.map((x) => x.build));
+  (nt || []).forEach((x) => { S.relNotes[x.build] = x; });
+}
+// 2.02: "Beta 1.49" was the old label of every version; the version is the game's number now
+const relLabel = (x) => (/^Beta 1\.49$/.test(x.label || '') ? '' : String(x.label || '').replace(/^Beta /, ''));
+function relNotesHTML(x) {
+  const n = (S.relNotes || {})[x.build], open = S.relOpen === x.build, first = n && n.notes ? n.notes.split('\n')[0].replace(/^• /, '') : '';
+  return '<td class="rl-nt">' + (first ? '<span class="muted">' + esc(first.length > 70 ? first.slice(0, 70) + '…' : first) + '</span> ' : '') + '<button class="btn sm" data-act="rel-notes" data-v="' + x.build + '">' + (open ? 'Fechar' : n && n.notes ? 'Ver notas' : 'Escrever notas') + '</button></td>';
+}
 function versionsHTML() {
   const r = S.cfg.release || {};
   return '<h1>Versões</h1><p class="sub">Cada vez que o GitHub monta um APK novo, ele também manda aquela versão do jogo para cá. Nada vai para os jogadores sozinho: você escolhe abaixo qual versão está “no ar”. Na próxima vez que abrirem o app, os jogadores baixam essa versão (cerca de 1 MB) na tela de carregamento, sem instalar APK.</p>'
     + '<div class="note" style="margin-bottom:14px">Um APK que já é mais novo que a versão no ar continua usando a própria versão (ninguém volta para trás sem querer). Para forçar uma volta (um erro na versão nova), escolha a versão antiga e marque “Voltar versão”.</div>'
     + '<div class="card"><h2>No ar agora: ' + (r.bundle ? 'versão ' + r.bundle : 'a que vem dentro de cada APK') + (r.rollback ? ' <span class="pill p-bad">voltando versão</span>' : '') + '</h2>'
-    + '<div class="tbl-wrap"><table><thead><tr><th>Versão</th><th>Nome</th><th>Data</th><th class="num">Tamanho</th><th>App mínimo</th><th></th></tr></thead><tbody>'
-    + ((S.releases || []).length ? S.releases.map((x) => '<tr><td><b>' + x.build + '</b>' + (+r.bundle === x.build ? ' <span class="pill p-good">no ar</span>' : '') + '</td><td>' + esc(x.label || '') + '</td><td>' + dt(x.created_at) + '</td><td class="num">' + nf(x.size_kb) + ' KB</td><td>' + x.native + '</td><td>'
-        + (+r.bundle === x.build ? '' : '<button class="btn sm go" data-act="rel-use" data-v="' + x.build + '">Colocar no ar</button>') + '</td></tr>').join('')
-      : '<tr><td colspan="6" class="muted">Nenhuma versão recebida ainda. Elas chegam depois que a chave secreta estiver no GitHub (veja o guia) e um APK novo for montado.</td></tr>')
+    + '<div class="tbl-wrap"><table><thead><tr><th>Montagem</th><th>Versão</th><th>Data</th><th class="num">Tamanho</th><th>App mínimo</th><th>Notas da versão</th><th></th></tr></thead><tbody>'
+    + ((S.releases || []).length ? S.releases.map((x) => '<tr><td><b>' + x.build + '</b>' + (+r.bundle === x.build ? ' <span class="pill p-good">no ar</span>' : '') + '</td><td>' + esc(relLabel(x)) + '</td><td>' + dt(x.created_at) + '</td><td class="num">' + nf(x.size_kb) + ' KB</td><td>' + x.native + '</td>' + relNotesHTML(x) + '<td>'
+        + (+r.bundle === x.build ? '' : '<button class="btn sm go" data-act="rel-use" data-v="' + x.build + '">Colocar no ar</button>') + '</td></tr>'
+        + (S.relOpen === x.build ? '<tr class="rl-ed"><td colspan="7"><textarea id="rl-notes" rows="9" maxlength="8000" placeholder="O que mudou nesta versão (uma linha por mudança)">' + esc(((S.relNotes || {})[x.build] || {}).notes || '') + '</textarea>'
+          + '<div class="row" style="margin-top:8px"><button class="btn go sm" data-act="rel-notes-save" data-v="' + x.build + '">Salvar notas</button><span class="muted">Escritas sozinhas a cada montagem (os commits desde a anterior); aqui você pode reescrever. Só o painel vê.</span></div></td></tr>' : '')).join('')
+      : '<tr><td colspan="8" class="muted">Nenhuma versão recebida ainda. Elas chegam depois que a chave secreta estiver no GitHub (veja o guia) e um APK novo for montado.</td></tr>')
     + '</tbody></table></div>'
     + '<div class="row" style="margin-top:12px"><label class="chk"><input type="checkbox" id="rl-back"' + (r.rollback ? ' checked' : '') + '> Voltar versão (também para quem tem APK mais novo)</label>' + (r.bundle ? '<button class="btn sm" data-act="rel-use" data-v="0">Tirar do ar (cada APK usa a sua)</button>' : '') + '</div></div>'
     + '<div class="card sec"><h2>Atualização automática</h2><p class="muted" style="margin-top:-4px">A cada montagem no GitHub, a versão nova do jogo entra no ar sozinha e chega a todos os apps ao abrir, sem instalar APK. Um APK novo só é exigido quando a parte nativa do app muda (NATIVE_VERSION) ou quando a versão do jogo não chegou ao servidor. O APK fica nas Releases deste site, sempre no mesmo link.</p>'
@@ -1080,6 +1094,11 @@ document.addEventListener('click', async (e) => {
       const r = Object.assign({}, S.cfg.release || {}, { bundle: +v, rollback: checked('rl-back') });
       if (+v && !confirm('Colocar a versão ' + v + ' no ar? Os jogadores recebem ao abrir o app.')) return;
       if (await saveCfg('release', r)) { toast(+v ? 'Versão ' + v + ' no ar.' : 'Cada APK volta a usar a própria versão.'); render(); }
+    } else if (act === 'rel-notes') { S.relOpen = S.relOpen === +v ? null : +v; render();
+    } else if (act === 'rel-notes-save') {
+      const notes = val('rl-notes');
+      const { error } = await sb.from('release_notes').upsert({ build: +v, notes, edited: true, updated_at: new Date().toISOString() }); if (error) return fail(error);
+      (S.relNotes || (S.relNotes = {}))[+v] = { build: +v, notes, edited: true }; toast('Notas salvas.'); S.relOpen = null; render();
     } else if (act === 'rel-unforce') {
       if (!confirm('Liberar quem está com um APK antigo? Eles voltam a jogar sem instalar o APK novo.')) return;
       const r = Object.assign({}, S.cfg.release || {}, { min_build: 0 });

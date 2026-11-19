@@ -224,3 +224,6 @@ tr.click:hover td { background: rgba(242,196,90,.07); }
 .pill.mk-trilha { background: rgba(242,196,90,.2); color: #f2d48a; }
 .pill.mk-cla { background: rgba(255,120,90,.2); color: #ffb3a1; }
 .pill.mk-evento { background: rgba(255,207,77,.2); color: #ffe08a; }
+/* 2.02: the version's patch notes */
+.rl-nt { max-width: 340px; font-size: 12.5px; }
+.rl-ed textarea { width: 100%; box-sizing: border-box; font: 13px/1.45 inherit; padding: 8px; }
